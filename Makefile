@@ -1,3 +1,4 @@
+PSPREFIX=$(shell psp-config --psp-prefix)
 PSPSDK=$(shell psp-config --pspsdk-path)
 TARGET = main
 OBJS = main.o $(PSPSDK)/samples/gu/common/callbacks.o $(PSPSDK)/samples/gu/common/vram.o
@@ -9,7 +10,7 @@ ASFLAGS = $(CFLAGS)
 
 LIBDIR = 
 LDFLAGS = 
-LIBS = -lpspgum -lpspgu
+LIBS = -lpspgum -lpspgu -lpng
 
 EXTRA_TARGETS = EBOOT.PBP
 PSP_EBOOT_TITLE = IQM Test Project
