@@ -10,7 +10,7 @@ ASFLAGS = $(CFLAGS)
 
 LIBDIR = 
 LDFLAGS = 
-LIBS = -lpspgum -lpspgu -lpng
+LIBS = -lpspgum -lpspgu -lpng -lz
 
 EXTRA_TARGETS = EBOOT.PBP
 PSP_EBOOT_TITLE = IQM Test Project

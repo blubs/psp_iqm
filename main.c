@@ -34,6 +34,8 @@ void *display_buffer;
 void *depth_buffer;
 
 
+
+
 void init_gu() {
     sceGuInit();
     sceGuStart(GU_DIRECT, display_list);
@@ -82,6 +84,82 @@ void init_gu() {
 }
 
 
+// TODO - We likely don't care about this... we should just store RGB values as floats, right?
+typedef struct png_texture_s {
+    int width;
+    int height;
+    png_byte color_type;
+    png_byte bit_depth;
+    png_bytep *row_pointers;
+} png_texture_t;
+
+
+// https://gist.github.com/niw/5963798
+void load_png_file(char *file, png_texture_t *tex) {
+    FILE *fp = fopen(file, "rb");
+    png_structp png_read_struct = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if(!png_read_struct) {
+        return;
+    }
+    if(tex->row_pointers != NULL) {
+        return;
+    }
+
+
+    png_infop png_info = png_create_info_struct(png_read_struct);
+    if(!png_info) {
+        return;
+    }
+    if(setjmp(png_jmpbuf(png_read_struct))) {
+        return;
+    }
+    png_init_io(png_read_struct, fp);
+    png_read_info(png_read_struct, png_info);
+    tex->width = png_get_image_width(png_read_struct, png_info);
+    tex->height = png_get_image_height(png_read_struct, png_info);
+    tex->color_type = png_get_color_type(png_read_struct, png_info);
+    tex->bit_depth = png_get_bit_depth(png_read_struct, png_info);
+
+    // Convert color type to RGBA 8888 format
+    if(tex->bit_depth == 16) {
+        png_set_strip_16(png_read_struct);
+    }
+    if(tex->color_type == PNG_COLOR_TYPE_PALETTE) {
+        png_set_palette_to_rgb(png_read_struct);
+    }
+    if(tex->color_type == PNG_COLOR_TYPE_GRAY && tex->bit_depth < 8) {
+        png_set_expand_gray_1_2_4_to_8(png_read_struct);
+    }
+    if(png_get_valid(png_read_struct, png_info, PNG_INFO_tRNS)) {
+        png_set_tRNS_to_alpha(png_read_struct);
+    }
+    // Add alpha channel to image formats that don't have one
+    if(tex->color_type == PNG_COLOR_TYPE_RGB || tex->color_type == PNG_COLOR_TYPE_GRAY || tex->color_type == PNG_COLOR_TYPE_PALETTE) {
+        png_set_filter(png_read_struct, 0xFF, PNG_FILLER_AFTER);
+    }
+    if(tex->color_type == PNG_COLOR_TYPE_GRAY || tex->color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
+        png_set_gray_to_rgb(png_read_struct);
+    }
+    png_read_update_info(png_read_struct, png_info);
+
+    tex->row_pointers = (png_bytep*) malloc(sizeof(png_bytep) * tex->height);
+    for(int y = 0; y < tex->height; y++) {
+        tex->row_pointers[y] = (png_byte*) malloc(png_get_rowbytes(png_read_struct,png_info));
+    }
+    png_read_image(png_read_struct, tex->row_pointers);
+    fclose(fp);
+    png_destroy_read_struct(&png_read_struct, &png_info, NULL);
+
+    // NOTE - To loop through pixels:
+    // png_bytep pixel = &(tex->row_pointers[i][j*4]);
+    // printf("RGBA(%3d %3d %3d %3d)", pixel[0], pixel[1], pixel[2], pixel[3]);
+
+    // TODO - Change tex_png to generic tex
+    // TODO - Allocate enough memory to load full texture
+    // TODO - memcpy rows at a time from the PNG load struct
+}
+
+
 int main(int argc, char *argv[]) {
     setupCallbacks();
     init_gu();
@@ -101,6 +179,13 @@ int main(int argc, char *argv[]) {
         pspDebugScreenPrintf("Read chars from file: %d\n", strlen(text));
         pspDebugScreenPrintf("Read text: \"%s\"\n", text);
     }
+
+    png_texture_t *zombie_tex = malloc(sizeof(png_texture_t));
+    png_texture_t *eyeglow_tex = malloc(sizeof(png_texture_t));
+
+
+
+
 
     void *cur_draw_buffer = draw_buffer;
     fclose(f);
