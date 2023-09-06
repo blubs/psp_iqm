@@ -13,7 +13,14 @@
 
 #include "callbacks.h"
 #include "vram.h"
-#include "png.h"
+
+
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_PNG
+#define STBI_ONLY_TGA
+#include "stb_image.h"
 
 
 
@@ -88,83 +95,27 @@ void init_gu() {
 typedef struct texture_s {
     int width;
     int height;
-    void *data; // Pointer to RGBA 8888 texture data (4 * width * height) bytes
+    uint8_t *data; // Pointer to RGBA 8888 texture data (4 * width * height) bytes
 } texture_t;
 
 
-// https://gist.github.com/niw/5963798
 int load_png_file(char *file, texture_t *tex) {
-    if(tex == NULL) {
-        return -1;
+    int bytes_per_pixel;
+    int img_width;
+    int img_height;
+    FILE *f = fopen(file, "rb");
+    uint8_t *data = stbi_load_from_file(f, &img_width, &img_height, &bytes_per_pixel, 4);
+    fclose(f);
+    if(data) {
+        tex->width = img_width;
+        tex->height = img_height;
+        size_t n_bytes = 4 * img_width * img_height;
+        tex->data = (void*) malloc(n_bytes);
+        memcpy(tex->data, data, n_bytes);
+        free(data);
+        return 0;
     }
-    if(tex->data != NULL) {
-        return -2;
-    }
-    FILE *fp = fopen(file, "rb");
-    png_structp png_read_struct = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    if(!png_read_struct) {
-        return -3;
-    }
-
-    png_infop png_info = png_create_info_struct(png_read_struct);
-    if(!png_info) {
-        return -4;
-    }
-    if(setjmp(png_jmpbuf(png_read_struct))) {
-        return -5;
-    }
-    png_init_io(png_read_struct, fp);
-    png_read_info(png_read_struct, png_info);
-    int img_width = png_get_image_width(png_read_struct, png_info);
-    int img_height = png_get_image_height(png_read_struct, png_info);
-    int img_color_type = png_get_color_type(png_read_struct, png_info);
-    int img_bit_depth = png_get_bit_depth(png_read_struct, png_info);
-
-    // Convert color type to RGBA 8888 format
-    if(img_bit_depth == 16) {
-        png_set_strip_16(png_read_struct);
-    }
-    if(img_color_type == PNG_COLOR_TYPE_PALETTE) {
-        png_set_palette_to_rgb(png_read_struct);
-    }
-    if(img_color_type == PNG_COLOR_TYPE_GRAY && img_bit_depth < 8) {
-        png_set_expand_gray_1_2_4_to_8(png_read_struct);
-    }
-    if(png_get_valid(png_read_struct, png_info, PNG_INFO_tRNS)) {
-        png_set_tRNS_to_alpha(png_read_struct);
-    }
-    // Add alpha channel to image formats that don't have one
-    if(img_color_type == PNG_COLOR_TYPE_RGB || img_color_type == PNG_COLOR_TYPE_GRAY || img_color_type == PNG_COLOR_TYPE_PALETTE) {
-        png_set_filter(png_read_struct, 0xFF, PNG_FILLER_AFTER);
-    }
-    if(img_color_type == PNG_COLOR_TYPE_GRAY || img_color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
-        png_set_gray_to_rgb(png_read_struct);
-    }
-    png_read_update_info(png_read_struct, png_info);
-
-    // Allocate enough data to read the PNG file
-    png_bytep *row_pointers = (png_bytep*) malloc(sizeof(png_bytep) * img_height);
-    for(int row_idx = 0; row_idx < img_height; row_idx++) {
-        row_pointers[row_idx] = (png_byte*) malloc(png_get_rowbytes(png_read_struct,png_info));
-    }
-    png_read_image(png_read_struct, row_pointers);
-    fclose(fp);
-    
-    // ------------------------------------------------------------------------
-    // Copy RGBA8888 data to contiguous memory for texture
-    // ------------------------------------------------------------------------
-    tex->width = img_width;
-    tex->height = img_width;
-    tex->data = (void*) malloc(4 * img_width * img_height);
-
-    for(int row_idx = 0; row_idx < img_height; row_idx++) {
-        // Copy pixel values for the entire image row:
-        size_t n_bytes = 4 * img_width;
-        memcpy(tex->data + (row_idx * n_bytes), row_pointers[row_idx], n_bytes);
-    }
-    // ------------------------------------------------------------------------
-    png_destroy_read_struct(&png_read_struct, &png_info, NULL);
-    return 0;
+    return -1;
 }
 
 
@@ -222,12 +173,16 @@ int main(int argc, char *argv[]) {
         pspDebugScreenSetXY(40,4);
         pspDebugScreenPrintf("Frame: \"%d\"", frame);
         pspDebugScreenSetXY(40,5);
-        pspDebugScreenPrintf("Zombie tex size: (%dx%d)", zombie_tex->width, zombie_tex->height);
-        int n_pixels = zombie_tex->width * zombie_tex->height;
-        int pixel_n = frame % n_pixels;
-        unsigned char *px_data = &((unsigned char*) (zombie_tex->data))[pixel_n * 4];
+
+        // texture_t *debug_tex = zombie_tex;
+        texture_t *debug_tex = eyeglow_tex;
+
+        pspDebugScreenPrintf("tex size: (%dx%d)", debug_tex->width, debug_tex->height);
+        int n_pixels = debug_tex->width * debug_tex->height;
+        int pixel_idx = frame % n_pixels;
+        uint8_t *px_data = &((uint8_t*) (debug_tex->data))[pixel_idx * 4];
         pspDebugScreenSetXY(20,6);
-        pspDebugScreenPrintf("Zombie tex pixel %d = RGBA(%d %d %d %d)", pixel_n, px_data[0], px_data[1], px_data[2], px_data[3]);
+        pspDebugScreenPrintf("tex pixel %d = RGBA(%d %d %d %d)", pixel_idx, px_data[0], px_data[1], px_data[2], px_data[3]);
         sceDisplayWaitVblankStart();
         cur_draw_buffer = sceGuSwapBuffers();
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
