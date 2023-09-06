@@ -95,23 +95,23 @@ typedef struct png_texture_s {
 
 
 // https://gist.github.com/niw/5963798
-void load_png_file(char *file, png_texture_t *tex) {
+int load_png_file(char *file, png_texture_t *tex) {
     FILE *fp = fopen(file, "rb");
     png_structp png_read_struct = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     if(!png_read_struct) {
-        return;
+        return -1;
     }
     if(tex->row_pointers != NULL) {
-        return;
+        return -2;
     }
 
 
     png_infop png_info = png_create_info_struct(png_read_struct);
     if(!png_info) {
-        return;
+        return -3;
     }
     if(setjmp(png_jmpbuf(png_read_struct))) {
-        return;
+        return -4;
     }
     png_init_io(png_read_struct, fp);
     png_read_info(png_read_struct, png_info);
@@ -157,6 +157,7 @@ void load_png_file(char *file, png_texture_t *tex) {
     // TODO - Change tex_png to generic tex
     // TODO - Allocate enough memory to load full texture
     // TODO - memcpy rows at a time from the PNG load struct
+    return 0;
 }
 
 
@@ -184,6 +185,8 @@ int main(int argc, char *argv[]) {
     png_texture_t *eyeglow_tex = malloc(sizeof(png_texture_t));
 
 
+    load_png_file("assets/zombie_tex_0.png", zombie_tex);
+    load_png_file("assets/eyeglow_tex.png", eyeglow_tex);
 
 
 
@@ -211,6 +214,8 @@ int main(int argc, char *argv[]) {
         pspDebugScreenPrintf("Reading file: \"test.txt\"");
         pspDebugScreenSetXY(40,4);
         pspDebugScreenPrintf("Frame: \"%d\"", frame);
+        pspDebugScreenSetXY(40,5);
+        pspDebugScreenPrintf("Zombie tex size: (%dx%d)", zombie_tex->width, zombie_tex->height);
         sceDisplayWaitVblankStart();
         cur_draw_buffer = sceGuSwapBuffers();
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
