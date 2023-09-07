@@ -99,7 +99,7 @@ typedef struct texture_s {
 } texture_t;
 
 
-int load_png_file(char *file, texture_t *tex) {
+int load_png_file(const char *file, texture_t *tex) {
     int bytes_per_pixel;
     int img_width;
     int img_height;
@@ -110,7 +110,7 @@ int load_png_file(char *file, texture_t *tex) {
         tex->width = img_width;
         tex->height = img_height;
         size_t n_bytes = 4 * img_width * img_height;
-        tex->data = (void*) malloc(n_bytes);
+        tex->data = (uint8_t*) malloc(n_bytes);
         memcpy(tex->data, data, n_bytes);
         free(data);
         return 0;
@@ -139,8 +139,8 @@ int main(int argc, char *argv[]) {
         pspDebugScreenPrintf("Read text: \"%s\"\n", text);
     }
 
-    texture_t *zombie_tex = malloc(sizeof(texture_t));
-    texture_t *eyeglow_tex = malloc(sizeof(texture_t));
+    texture_t *zombie_tex = (texture_t*) malloc(sizeof(texture_t));
+    texture_t *eyeglow_tex = (texture_t*) malloc(sizeof(texture_t));
 
 
     load_png_file("assets/zombie_tex_0.png", zombie_tex);
