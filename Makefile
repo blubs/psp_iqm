@@ -1,7 +1,7 @@
 PSPREFIX=$(shell psp-config --psp-prefix)
 PSPSDK=$(shell psp-config --pspsdk-path)
 TARGET = main
-OBJS = main.o $(PSPSDK)/samples/gu/common/callbacks.o $(PSPSDK)/samples/gu/common/vram.o
+OBJS = main.o iqm.o $(PSPSDK)/samples/gu/common/callbacks.o $(PSPSDK)/samples/gu/common/vram.o
 
 INCDIR = $(PSPSDK)/samples/gu/common/
 CFLAGS = -Wall

@@ -23,11 +23,14 @@
 #include "stb_image.h"
 
 
+#include "iqm.h"
+
 
 PSP_MODULE_INFO("IQM Test Project", 0, 1, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 
 #define printf pspDebugScreenPrintf
+
 
 
 #define BUF_WIDTH (512)
@@ -73,6 +76,7 @@ void init_gu() {
     sceGuDepthRange((1<<16) - 1, 0);
     // Depth buffer is inverted (a closer than b --> a > b)
     sceGuDepthFunc(GU_GEQUAL);
+    sceGuEnable(GU_DEPTH_TEST);
     // Specify region to scissor
     sceGuScissor(0,0,SCR_WIDTH,SCR_HEIGHT);
     sceGuEnable(GU_SCISSOR_TEST);
@@ -83,7 +87,7 @@ void init_gu() {
     sceGuEnable(GU_CLIP_PLANES);
     sceGuFinish();
     // Wait for draw commands to finish processing
-    sceGuSync(GU_SYNC_WHAT_DONE,0);
+    sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
     // Wait for vertical blank start
     sceDisplayWaitVblankStart();
     // Turn display on
@@ -119,6 +123,8 @@ int load_png_file(const char *file, texture_t *tex) {
 }
 
 
+
+
 int main(int argc, char *argv[]) {
     setupCallbacks();
     init_gu();
@@ -142,6 +148,10 @@ int main(int argc, char *argv[]) {
     texture_t *zombie_tex = (texture_t*) malloc(sizeof(texture_t));
     texture_t *eyeglow_tex = (texture_t*) malloc(sizeof(texture_t));
 
+    // int iqm_version = load_iqm_file("assets/zombie_with_anims.iqm");
+    // iqm_header_t *iqm_header = load_iqm_file("assets/zombie_with_anims.iqm");
+    mesh_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
+
 
     load_png_file("assets/zombie_tex_0.png", zombie_tex);
     load_png_file("assets/eyeglow_tex.png", eyeglow_tex);
@@ -160,6 +170,68 @@ int main(int argc, char *argv[]) {
         // sceGuClear(GU_DEPTH_BUFFER_BIT);
         // sceGuClear(GU_COLOR_BUFFER_BIT);
         sceGuClear(GU_COLOR_BUFFER_BIT | GU_DEPTH_BUFFER_BIT);
+
+        // --------------------------------------------------------------------
+        // Let's try drawing...
+        // --------------------------------------------------------------------
+        sceGumMatrixMode(GU_PROJECTION);
+        sceGumLoadIdentity();
+        sceGumPerspective(75.0f, 16.0f/9.0f, 0.5f, 1000.0f);
+        sceGumMatrixMode(GU_VIEW); // TODO Move the camera somewhere...
+        sceGumLoadIdentity();
+        sceGumMatrixMode(GU_MODEL);
+        sceGumLoadIdentity();
+        // ScePspFVector3 model_pos = {0,-10.0f,0.0f};
+        // ScePspFVector3 model_pos = {0,0,-2.5f};
+        // ScePspFVector3 model_pos = {10.0f,0,0.0f};
+        // ScePspFVector3 model_pos = {0,-10.0f,0.0f};
+        ScePspFVector3 model_pos = {0,0,-10.0f};
+        ScePspFVector3 model_rot = {frame * 0.79f * (GU_PI/180.0f), frame * 0.98f * (GU_PI/180.0f), frame * 1.32f * (GU_PI/180.0f)};
+        // float scale = (sin((float)frame / 10.0f) + 1.0f) * 100;
+        float scale = 0.1f;
+        ScePspFVector3 model_scale = {scale,scale,scale};
+        sceGumTranslate(&model_pos);
+        sceGumScale(&model_scale);
+        sceGumRotateXYZ(&model_rot);
+
+
+        // -----------------------------------
+        // Translate IQM model data to PSP format:
+        // FIXME - This is bad...
+        // -----------------------------------
+        sceGuTexMode(GU_PSM_8888,0,0,0);
+        sceGuTexImage(0,zombie_tex->width,zombie_tex->height,zombie_tex->width,zombie_tex);
+        sceGuTexFunc(GU_TFX_ADD,GU_TCC_RGB);
+        sceGuTexEnvColor(0xffff00);
+        sceGuTexFilter(GU_LINEAR, GU_LINEAR);
+        sceGuTexScale(1.0f,1.0f);
+        sceGuTexOffset(0.0f,0.0f);
+        sceGuAmbientColor(0xffffffff);
+
+        // for(unsigned int i = 0; i < iqm_model->n_submeshes; i++) {
+        for(unsigned int i = 0; i < 6; i++) {
+            vertex_t *submesh_verts = iqm_model->verts;
+            unsigned int *submesh_tri_vert_idxs = iqm_model->submeshes[i].tri_verts;
+            unsigned int submesh_n_tri_verts = iqm_model->submeshes[i].n_tri_verts; 
+ 
+            sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, submesh_n_tri_verts, submesh_tri_vert_idxs, submesh_verts);
+
+
+            // for(unsigned int j = 0; j < iqm_model->submeshes[i].n_tris * 3; j++) {
+            //     submesh_verts[j].u = iqm_model->verts_uv[iqm_model->submeshes[i].tri_verts[j]].pos[0];
+            //     submesh_verts[j].v = iqm_model->verts_uv[iqm_model->submeshes[i].tri_verts[j]].pos[1];
+            //     submesh_verts[j].x = iqm_model->verts_pos[iqm_model->submeshes[i].tri_verts[j]].pos[0];
+            //     submesh_verts[j].y = iqm_model->verts_pos[iqm_model->submeshes[i].tri_verts[j]].pos[1];
+            //     submesh_verts[j].z = iqm_model->verts_pos[iqm_model->submeshes[i].tri_verts[j]].pos[2];
+            //     submesh_verts[j].color = 0xff7f0000;
+            // }
+            // // FIXME - horrible memory leak
+            // size_t n_floats = iqm_model->submeshes[i].n_tris * 3;
+            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,n_floats, 0, submesh_verts);
+        }
+        // --------------------------------------------------------------------
+
+
         sceGuFinish();
 
 
@@ -168,21 +240,30 @@ int main(int argc, char *argv[]) {
         pspDebugScreenSetOffset((int) cur_draw_buffer);
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
         // pspDebugScreenSetOffset((int) display_buffer);
-        pspDebugScreenSetXY(40,3);
-        pspDebugScreenPrintf("Reading file: \"test.txt\"");
-        pspDebugScreenSetXY(40,4);
-        pspDebugScreenPrintf("Frame: \"%d\"", frame);
-        pspDebugScreenSetXY(40,5);
+
+
+        pspDebugScreenSetXY(0,3);
+        int vert_idx = frame % (iqm_model->n_verts);
+        pspDebugScreenPrintf("Submesh[%d] vertex[%d]: (%.3f,%.3f,%.3f) (%.3f, %.3f)", 0,vert_idx, iqm_model->verts[vert_idx].x,iqm_model->verts[vert_idx].y,iqm_model->verts[vert_idx].z,iqm_model->verts[vert_idx].u,iqm_model->verts[vert_idx].v);
+
+        // pspDebugScreenSetXY(40,3);  
+        // pspDebugScreenPrintf("IQM Version: %d", iqm_header->version);
+        // pspDebugScreenSetXY(40,4);
+        // pspDebugScreenPrintf("IQM n_meshes: %d", iqm_header->n_meshes);
+        // pspDebugScreenSetXY(40,5);
+        // pspDebugScreenPrintf("IQM n_verts: %d", iqm_header->n_verts);
+
+        // pspDebugScreenPrintf("Frame: \"%d\"", frame);
+        // pspDebugScreenSetXY(40,5);
 
         // texture_t *debug_tex = zombie_tex;
-        texture_t *debug_tex = eyeglow_tex;
-
-        pspDebugScreenPrintf("tex size: (%dx%d)", debug_tex->width, debug_tex->height);
-        int n_pixels = debug_tex->width * debug_tex->height;
-        int pixel_idx = frame % n_pixels;
-        uint8_t *px_data = &((uint8_t*) (debug_tex->data))[pixel_idx * 4];
-        pspDebugScreenSetXY(20,6);
-        pspDebugScreenPrintf("tex pixel %d = RGBA(%d %d %d %d)", pixel_idx, px_data[0], px_data[1], px_data[2], px_data[3]);
+        // texture_t *debug_tex = eyeglow_tex;
+        // pspDebugScreenPrintf("tex size: (%dx%d)", debug_tex->width, debug_tex->height);
+        // int n_pixels = debug_tex->width * debug_tex->height;
+        // int pixel_idx = frame % n_pixels;
+        // uint8_t *px_data = &((uint8_t*) (debug_tex->data))[pixel_idx * 4];
+        // pspDebugScreenSetXY(20,6);
+        // pspDebugScreenPrintf("tex pixel %d = RGBA(%d %d %d %d)", pixel_idx, px_data[0], px_data[1], px_data[2], px_data[3]);
         sceDisplayWaitVblankStart();
         cur_draw_buffer = sceGuSwapBuffers();
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
