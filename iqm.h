@@ -344,7 +344,8 @@ model_t *load_iqm_file(const char*file_path) {
         model->verts[i].z = verts_pos[i].pos[2];
         model->verts[i].u = verts_uv[i].pos[0];
         model->verts[i].v = verts_uv[i].pos[1];
-        model->verts[i].color = 0xffffffff;
+        // model->verts[i].color = 0xffffffff;
+        model->verts[i].color = 0x00000000;
     }
     // ------------------------------------------------------------------------
 

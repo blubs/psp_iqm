@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
         // FIXME - This is bad...
         // -----------------------------------
         sceGuTexMode(GU_PSM_8888,0,0,0);
-        sceGuTexImage(0,zombie_tex->width,zombie_tex->height,zombie_tex->width,zombie_tex);
+        sceGuTexImage(0,zombie_tex->width,zombie_tex->height,zombie_tex->width,zombie_tex->data);
         sceGuTexFunc(GU_TFX_ADD,GU_TCC_RGB);
         sceGuTexEnvColor(0xffff00);
         sceGuTexFilter(GU_LINEAR, GU_LINEAR);
@@ -212,12 +212,15 @@ int main(int argc, char *argv[]) {
         sceGuTexOffset(0.0f,0.0f);
         sceGuAmbientColor(0xffffffff);
 
+
+
+
         // for(unsigned int i = 0; i < iqm_model->n_submeshes; i++) {
         unsigned int mesh_idx = ((unsigned int)((frame / 10.0f)) % iqm_model->n_meshes);
         vertex_t *model_verts = iqm_model->verts;
  
-        // for(unsigned int i = 0; i < iqm_model->n_meshes; i++) {
-        for(unsigned int i = mesh_idx; i < mesh_idx+1; i++) {
+        // for(unsigned int i = mesh_idx; i < mesh_idx+1; i++) {
+        for(unsigned int i = 0; i < iqm_model->n_meshes; i++) {
             uint16_t *mesh_tri_vert_idxs = iqm_model->meshes[i].tri_verts;
             unsigned int mesh_n_tri_verts = iqm_model->meshes[i].n_tri_verts;
             unsigned int mesh_n_verts = iqm_model->meshes[i].n_verts;
