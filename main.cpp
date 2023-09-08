@@ -150,7 +150,7 @@ int main(int argc, char *argv[]) {
 
     // int iqm_version = load_iqm_file("assets/zombie_with_anims.iqm");
     // iqm_header_t *iqm_header = load_iqm_file("assets/zombie_with_anims.iqm");
-    mesh_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
+    model_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
 
 
     load_png_file("assets/zombie_tex_0.png", zombie_tex);
@@ -164,7 +164,8 @@ int main(int argc, char *argv[]) {
     while(running()) {
         sceGuStart(GU_DIRECT, display_list);
         // Smoothly fade between 0 and 1:
-        float fade = 0.5f * (sin((float)frame / 10.0f) + 1.0f);
+        // float fade = 0.5f * (sin((float)frame / 10.0f) + 1.0f);
+        float fade = 0;
         sceGuClearColor((int)(0x0000ff * fade));
         sceGuClearDepth(0);
         // sceGuClear(GU_DEPTH_BUFFER_BIT);
@@ -186,7 +187,10 @@ int main(int argc, char *argv[]) {
         // ScePspFVector3 model_pos = {10.0f,0,0.0f};
         // ScePspFVector3 model_pos = {0,-10.0f,0.0f};
         ScePspFVector3 model_pos = {0,0,-10.0f};
-        ScePspFVector3 model_rot = {frame * 0.79f * (GU_PI/180.0f), frame * 0.98f * (GU_PI/180.0f), frame * 1.32f * (GU_PI/180.0f)};
+        // ScePspFVector3 model_rot = {frame * 0.79f * (GU_PI/180.0f), frame * 0.98f * (GU_PI/180.0f), frame * 1.32f * (GU_PI/180.0f)};
+        // ScePspFVector3 model_rot = {0, frame * 1.32f * (GU_PI/180.0f), 0};
+        ScePspFVector3 model_rot = {-90 * (GU_PI/180.0f), 0, (frame * 0.32f + -90) * (GU_PI/180.0f)};
+        // ScePspFVector3 model_rot = {-90 * (GU_PI/180.0f), 0, (-90) * (GU_PI/180.0f)};
         // float scale = (sin((float)frame / 10.0f) + 1.0f) * 100;
         float scale = 0.1f;
         ScePspFVector3 model_scale = {scale,scale,scale};
@@ -209,12 +213,31 @@ int main(int argc, char *argv[]) {
         sceGuAmbientColor(0xffffffff);
 
         // for(unsigned int i = 0; i < iqm_model->n_submeshes; i++) {
-        for(unsigned int i = 0; i < 6; i++) {
-            vertex_t *submesh_verts = iqm_model->verts;
-            unsigned int *submesh_tri_vert_idxs = iqm_model->submeshes[i].tri_verts;
-            unsigned int submesh_n_tri_verts = iqm_model->submeshes[i].n_tri_verts; 
+        unsigned int mesh_idx = ((unsigned int)((frame / 10.0f)) % iqm_model->n_meshes);
+        vertex_t *model_verts = iqm_model->verts;
  
-            sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, submesh_n_tri_verts, submesh_tri_vert_idxs, submesh_verts);
+        // for(unsigned int i = 0; i < iqm_model->n_meshes; i++) {
+        for(unsigned int i = mesh_idx; i < mesh_idx+1; i++) {
+            uint16_t *mesh_tri_vert_idxs = iqm_model->meshes[i].tri_verts;
+            unsigned int mesh_n_tri_verts = iqm_model->meshes[i].n_tri_verts;
+            unsigned int mesh_n_verts = iqm_model->meshes[i].n_verts;
+            unsigned int mesh_first_vert = iqm_model->meshes[i].first_vert;  
+            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
+            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
+            sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_tri_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
+            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, 0, model_verts + mesh_first_vert);
+            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, 0, model_verts + mesh_first_vert);
+            // sceGumDrawArray(GU_POINTS,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, submesh_n_verts, submesh_tri_vert_idxs, model_verts + submesh_first_vert);
+
+            // Okay, so now the vertices being drawn are correct... but the indices are still wrong..
+
+
+            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, submesh_n_tri_verts, submesh_tri_vert_idxs, submesh_verts);
+            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, submesh_n_tri_verts, 0, submesh_verts);
+            // FIXME - The issue may be that it's drawing the other vertices...
+
+            // FIXME - The issue is that the list of VERTICES must specify the the triangles...
+            // I'm not sure why the triangle indices are being ignored.
 
 
             // for(unsigned int j = 0; j < iqm_model->submeshes[i].n_tris * 3; j++) {
@@ -242,9 +265,11 @@ int main(int argc, char *argv[]) {
         // pspDebugScreenSetOffset((int) display_buffer);
 
 
-        pspDebugScreenSetXY(0,3);
+        pspDebugScreenSetXY(1,3);
         int vert_idx = frame % (iqm_model->n_verts);
-        pspDebugScreenPrintf("Submesh[%d] vertex[%d]: (%.3f,%.3f,%.3f) (%.3f, %.3f)", 0,vert_idx, iqm_model->verts[vert_idx].x,iqm_model->verts[vert_idx].y,iqm_model->verts[vert_idx].z,iqm_model->verts[vert_idx].u,iqm_model->verts[vert_idx].v);
+        pspDebugScreenPrintf("mesh[%d] n_tris: %d, n_verts: %d, n_tri_verts: %d", mesh_idx, iqm_model->meshes[mesh_idx].n_tris, iqm_model->meshes[mesh_idx].n_verts, iqm_model->meshes[mesh_idx].n_tri_verts);
+        pspDebugScreenSetXY(1,4);
+        pspDebugScreenPrintf("vertex[%d]: (%.3f,%.3f,%.3f) (%.3f, %.3f)", vert_idx, iqm_model->verts[vert_idx].x,iqm_model->verts[vert_idx].y,iqm_model->verts[vert_idx].z,iqm_model->verts[vert_idx].u,iqm_model->verts[vert_idx].v);
 
         // pspDebugScreenSetXY(40,3);  
         // pspDebugScreenPrintf("IQM Version: %d", iqm_header->version);
