@@ -1,6 +1,10 @@
+#include "logging.h"
+
+
 #define IQM_MAGIC "INTERQUAKEMODEL"
 #define IQM_VERSION_1 1
 #define IQM_VERSION_2 2
+
 
 typedef struct vec3_s {
     float pos[3];

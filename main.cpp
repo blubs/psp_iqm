@@ -123,6 +123,7 @@ int load_png_file(const char *file, texture_t *tex) {
 }
 
 
+#include "logging.h"
 
 
 int main(int argc, char *argv[]) {
