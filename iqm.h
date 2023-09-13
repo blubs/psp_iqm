@@ -20,29 +20,29 @@ typedef struct vec2_s {
 // TODO - Define needed structs
 typedef struct iqm_header_s {
     char magic[16];
-    unsigned int version;
-    unsigned int filesize;
-    unsigned int flags;
-    unsigned int n_text, ofs_text;
-    unsigned int n_meshes, ofs_meshes;
-    unsigned int n_vert_arrays, n_verts, ofs_vert_arrays;
-    unsigned int n_tris, ofs_tris, ofs_adjacency;
-    unsigned int n_joints, ofs_joints;
-    unsigned int n_poses, ofs_poses;
-    unsigned int n_anims, ofs_anims;
-    unsigned int n_frames, n_frame_channels, ofs_frames, ofs_bounds;
-    unsigned int n_comments, ofs_comments;
-    unsigned int n_extensions, ofs_extensions;
+    uint32_t version;
+    uint32_t filesize;
+    uint32_t flags;
+    uint32_t n_text, ofs_text;
+    uint32_t n_meshes, ofs_meshes;
+    uint32_t n_vert_arrays, n_verts, ofs_vert_arrays;
+    uint32_t n_tris, ofs_tris, ofs_adjacency;
+    uint32_t n_joints, ofs_joints;
+    uint32_t n_poses, ofs_poses;
+    uint32_t n_anims, ofs_anims;
+    uint32_t n_frames, n_frame_channels, ofs_frames, ofs_bounds;
+    uint32_t n_comments, ofs_comments;
+    uint32_t n_extensions, ofs_extensions;
 } iqm_header_t;
 
 typedef struct iqm_mesh_s {
-    unsigned int name;
-    unsigned int material;
-    unsigned int first_vert_idx, n_verts;
-    unsigned int first_tri, n_tris;
+    uint32_t name;
+    uint32_t material;
+    uint32_t first_vert_idx, n_verts;
+    uint32_t first_tri, n_tris;
 } iqm_mesh_t;
 
-enum class iqm_vert_array_type : unsigned int {
+enum class iqm_vert_array_type : uint32_t {
     IQM_VERT_POS            = 0,
     IQM_VERT_UV             = 1,
     IQM_VERT_NOR            = 2,
@@ -53,7 +53,7 @@ enum class iqm_vert_array_type : unsigned int {
     IQM_VERT_CUSTOM         = 0X10
 };
 
-enum class iqm_dtype : unsigned int {
+enum class iqm_dtype : uint32_t {
     IQM_DTYPE_BYTE          = 0,
     IQM_DTYPE_UBYTE         = 1,
     IQM_DTYPE_SHORT         = 2,
@@ -67,44 +67,44 @@ enum class iqm_dtype : unsigned int {
 
 
 typedef struct iqm_tri_s {
-    unsigned int vert_idxs[3];
+    uint32_t vert_idxs[3];
 } iqm_tri_t;
 
 
 typedef struct iqm_joint_euler_s {
-    unsigned int name;
-    int parent_joint_idx;
+    uint32_t name;
+    int32_t parent_joint_idx;
     float translate[3], rotate[3], scale[3];
 } iqm_joint_euler_t;
 
 
 typedef struct iqm_joint_quaternion_s {
-    unsigned int name;
-    int parent_joint_idx;
+    uint32_t name;
+    int32_t parent_joint_idx;
     float translate[3], rotate[4], scale[3];
 } iqm_joint_quaternion_t;
 
 
 typedef struct iqm_pose_euler_s {
-    int parent_idx; // Parent POSE idx? parent bone idx?
-    unsigned int mask;
+    int32_t parent_idx; // Parent POSE idx? parent bone idx?
+    uint32_t mask;
     float channel_ofs[9];
     float channel_scale[9];
 } iqm_pose_euler_t;
 
 
 typedef struct iqm_pose_quaternion_s {
-    int parent_idx; // Parent POSE idx? parent bone idx?
-    unsigned int mask;
+    int32_t parent_idx; // Parent POSE idx? parent bone idx?
+    uint32_t mask;
     float channel_ofs[10];
     float channel_scale[10];
 } iqm_pose_quaternion_t;
 
 typedef struct iqm_anim_s {
-    unsigned int name;
-    unsigned int first_frame, n_frames;
+    uint32_t name;
+    uint32_t first_frame, n_frames;
     float framerate;
-    unsigned int flags;
+    uint32_t flags;
 } iqm_anim_t;
 
 
@@ -114,11 +114,11 @@ enum class iqm_anim_flag {
 
 
 typedef struct iqm_vert_array_s {
-    unsigned int type; // TODO - iqm_vert_array_type?
-    unsigned int flags;
-    unsigned int format;// TODO - iqm_dtype
-    unsigned int size;
-    unsigned int ofs;
+    uint32_t type; // TODO - iqm_vert_array_type?
+    uint32_t flags;
+    uint32_t format;// TODO - iqm_dtype
+    uint32_t size;
+    uint32_t ofs;
 } iqm_vert_array_t;
 
 
@@ -130,46 +130,46 @@ typedef struct iqm_bounds_s {
 
 
 typedef struct iqm_extension_s {
-    unsigned int name;
-    unsigned int n_data, ofs_data;
-    unsigned int ofs_extensions; // Pointer to next extension?
+    uint32_t name;
+    uint32_t n_data, ofs_data;
+    uint32_t ofs_extensions; // Pointer to next extension?
 } iqm_extension_t;
 
 
 typedef struct iqm_ext_fte_mesh_s {
-    unsigned int contents;      // default: CONTENTS_BODY
-    unsigned int surfaceflags;  // Propagates to trace_surfaceflags
-    unsigned int surfaceid;     // Body reported to QC via trace_surface
-    unsigned int geomset;
-    unsigned int geomid;
+    uint32_t contents;      // default: CONTENTS_BODY
+    uint32_t surfaceflags;  // Propagates to trace_surfaceflags
+    uint32_t surfaceid;     // Body reported to QC via trace_surface
+    uint32_t geomset;
+    uint32_t geomid;
     float min_dist;
     float max_dist;
 } iqm_ext_fte_mesh_t;
 
 
 typedef struct iqm_ext_fte_event_s {
-    unsigned int anim;
+    uint32_t anim;
     float timestamp;
-    unsigned int event_code;
-    unsigned int event_data_str;        // Stringtable
+    uint32_t event_code;
+    uint32_t event_data_str;        // Stringtable
 } iqm_ext_fte_event_t;
 
 
 typedef struct iqm_ext_fte_skin_s {
-    unsigned int n_skinframes;
-    unsigned int n_meshskins;
+    uint32_t n_skinframes;
+    uint32_t n_meshskins;
 } iqm_ext_fte_skin_t;
 
 
 typedef struct iqm_ext_fte_skin_skinframe_s {
-    unsigned int material_idx;
-    unsigned int shadertext_idx;
+    uint32_t material_idx;
+    uint32_t shadertext_idx;
 } iqm_ext_fte_skin_skinframe_t;
 
 
 typedef struct iqm_ext_fte_skin_meshskin_s {
-    unsigned int first_frame;
-    unsigned int n_frames;
+    uint32_t first_frame;
+    uint32_t n_frames;
     float interval;
 } iqm_ext_fte_skin_meshskin_t;
 
@@ -178,30 +178,30 @@ typedef struct iqm_ext_fte_skin_meshskin_s {
 
 typedef struct vertex_s {
     float u, v;
-    unsigned int color;
+    uint32_t color;
     float x,y,z;
 } vertex_t;
 
 
 typedef struct mesh_s {
     // Number of vertices in submesh (FIXME - what is this exactly?)
-    unsigned int n_verts;
+    uint32_t n_verts;
     // Number of triangles in submesh
-    unsigned int n_tris;
+    uint32_t n_tris;
     // Contains vertex indices
     // TODO - Use whatever data struct sceGU expects as vert indices for triangles:
     // unsigned short 
     uint16_t *tri_verts;
-    unsigned int n_tri_verts;
-    unsigned int first_vert;
+    uint32_t n_tri_verts;
+    uint32_t first_vert;
 } mesh_t;
 
 
 // Temp container:
 typedef struct model_s {
-    unsigned int n_verts;
+    uint32_t n_verts;
     vertex_t *verts;
-    unsigned int n_meshes;
+    uint32_t n_meshes;
     mesh_t *meshes;
 } model_t;
 
@@ -342,7 +342,7 @@ model_t *load_iqm_file(const char*file_path) {
     iqm_parse_float_array(iqm_data, iqm_verts_uv, (float*) verts_uv, model->n_verts, 2, (float*) &default_uv);
 
     // Populate verts array:
-    for(unsigned int i = 0; i < model->n_verts; i++) {
+    for(uint32_t i = 0; i < model->n_verts; i++) {
         model->verts[i].x = verts_pos[i].pos[0]; 
         model->verts[i].y = verts_pos[i].pos[1];
         model->verts[i].z = verts_pos[i].pos[2];
@@ -357,18 +357,18 @@ model_t *load_iqm_file(const char*file_path) {
 
     const iqm_mesh_t *iqm_meshes = (const iqm_mesh_t*)(iqm_data + iqm_header->ofs_meshes);
 
-    for(unsigned int i = 0; i < iqm_header->n_meshes; i++) {
+    for(uint32_t i = 0; i < iqm_header->n_meshes; i++) {
 
-        unsigned int first_vert = iqm_meshes[i].first_vert_idx;
-        unsigned int n_verts = iqm_meshes[i].n_verts;
-        unsigned int first_tri = iqm_meshes[i].first_tri;
-        unsigned int n_tris = iqm_meshes[i].n_tris;
+        uint32_t first_vert = iqm_meshes[i].first_vert_idx;
+        uint32_t n_verts = iqm_meshes[i].n_verts;
+        uint32_t first_tri = iqm_meshes[i].first_tri;
+        uint32_t n_tris = iqm_meshes[i].n_tris;
         model->meshes[i].n_tri_verts = n_tris * 3;
         model->meshes[i].tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * n_tris * 3);
         model->meshes[i].first_vert = first_vert;
 
 
-        for(unsigned int j = 0; j < n_tris; j++) {
+        for(uint32_t j = 0; j < n_tris; j++) {
             uint16_t vert_a = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[0] - first_vert;
             uint16_t vert_b = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[1] - first_vert;
             uint16_t vert_c = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[2] - first_vert;
@@ -383,7 +383,63 @@ model_t *load_iqm_file(const char*file_path) {
         model->meshes[i].n_tris = n_tris;
     }
 
+    // --------------------------------------------------
+    // Parse bones
+    // --------------------------------------------------
+    log_printf("Parsing joints...\n");
 
+    const iqm_joint_quaternion_t *iqm_joints = (const iqm_joint_quaternion_t*) (iqm_data + iqm_header->ofs_joints);
+    for(uint32_t i = 0; i < iqm_header->n_joints; i++) {
+        const char *joint_name = (const char*) ((iqm_data + iqm_header->ofs_text) + iqm_joints[i].name);
+        log_printf("Joint[%d]: \"%s\"\n", i, joint_name);
+        log_printf("\tParent bone: %d\n", iqm_joints[i].parent_joint_idx);
+        log_printf("\tPos: (%f, %f, %f)\n", iqm_joints[i].translate[0], iqm_joints[i].translate[1], iqm_joints[i].translate[2]);
+        log_printf("\tRot: (%f, %f, %f, %f)\n", iqm_joints[i].rotate[0], iqm_joints[i].rotate[1], iqm_joints[i].rotate[2]);
+        log_printf("\tScale: (%f, %f, %f)\n", iqm_joints[i].scale[0], iqm_joints[i].scale[1], iqm_joints[i].scale[2]);
+    }
+    // --------------------------------------------------
+    // --------------------------------------------------
+    // Parse all frames (poses)
+    // --------------------------------------------------
+    const uint16_t *frames_data = (const uint16_t*)(iqm_data + iqm_header->ofs_frames);
+    const iqm_pose_quaternion_t *iqm_poses = (const iqm_pose_quaternion_t*) (iqm_data + iqm_header->ofs_poses);
+
+    // Iterate over actual frames in IQM file:
+    for(uint32_t i = 0; i < iqm_header->n_frames; i++) {
+        // Iterate over pose (a pose is a bone orientation, one pose per bone)
+        for(uint32_t j = 0; j < iqm_header->n_poses; j++) {
+            // Read data for all 10 channels
+            float pose_data[10] = {0};
+            for(uint32_t k = 0; k < 10; k++) {
+                pose_data[k] = iqm_poses[j].channel_ofs[k];
+                if(iqm_poses[j].mask & (1 << k)) {
+                    pose_data[k] += frames_data[i*iqm_header->n_poses + j] * iqm_poses[j].channel_scale[k];
+                }
+            }
+            float pos_x = pose_data[0];
+            float pos_y = pose_data[1];
+            float pos_z = pose_data[2];
+            float quat_x = pose_data[3];
+            float quat_y = pose_data[4];
+            float quat_z = pose_data[5];
+            float quat_w = pose_data[6];
+            float scale_x = pose_data[7];
+            float scale_y = pose_data[8];
+            float scale_z = pose_data[9];
+
+            log_printf("Frame: %d, Pose: %d \n", i, j);
+            log_printf("\tPos: (%f, %f, %f)\n", pos_x, pos_y, pos_z);
+            log_printf("\tRot: (%f, %f, %f, %f)\n", quat_x, quat_y, quat_z, quat_w);
+            log_printf("\tScale: (%f, %f, %f)\n", scale_x, scale_y, scale_z);
+
+            // TODO - Store these values?
+            // TODO - Compute matrix from these values?
+        }
+
+    }
+
+
+    free(iqm_data);
     return model;
     // FIXME - massive memory leaks happening here
 

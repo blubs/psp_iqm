@@ -127,6 +127,7 @@ int load_png_file(const char *file, texture_t *tex) {
 
 
 int main(int argc, char *argv[]) {
+    log_printf("Starting program\n");
     setupCallbacks();
     init_gu();
     pspDebugScreenInit();
@@ -151,6 +152,7 @@ int main(int argc, char *argv[]) {
 
     // int iqm_version = load_iqm_file("assets/zombie_with_anims.iqm");
     // iqm_header_t *iqm_header = load_iqm_file("assets/zombie_with_anims.iqm");
+
     model_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
 
 
@@ -225,7 +227,7 @@ int main(int argc, char *argv[]) {
             uint16_t *mesh_tri_vert_idxs = iqm_model->meshes[i].tri_verts;
             unsigned int mesh_n_tri_verts = iqm_model->meshes[i].n_tri_verts;
             unsigned int mesh_n_verts = iqm_model->meshes[i].n_verts;
-            unsigned int mesh_first_vert = iqm_model->meshes[i].first_vert;  
+            unsigned int mesh_first_vert = iqm_model->meshes[i].first_vert;
             // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
             // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
             sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_tri_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
@@ -271,7 +273,7 @@ int main(int argc, char *argv[]) {
 
         pspDebugScreenSetXY(1,3);
         int vert_idx = frame % (iqm_model->n_verts);
-        pspDebugScreenPrintf("mesh[%d] n_tris: %d, n_verts: %d, n_tri_verts: %d", mesh_idx, iqm_model->meshes[mesh_idx].n_tris, iqm_model->meshes[mesh_idx].n_verts, iqm_model->meshes[mesh_idx].n_tri_verts);
+        pspDebugScreenPrintf("mesh[%d] n_tris: %ld, n_verts: %ld, n_tri_verts: %ld", mesh_idx, iqm_model->meshes[mesh_idx].n_tris, iqm_model->meshes[mesh_idx].n_verts, iqm_model->meshes[mesh_idx].n_tri_verts);
         pspDebugScreenSetXY(1,4);
         pspDebugScreenPrintf("vertex[%d]: (%.3f,%.3f,%.3f) (%.3f, %.3f)", vert_idx, iqm_model->verts[vert_idx].x,iqm_model->verts[vert_idx].y,iqm_model->verts[vert_idx].z,iqm_model->verts[vert_idx].u,iqm_model->verts[vert_idx].v);
 
