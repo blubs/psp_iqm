@@ -108,7 +108,7 @@ typedef struct iqm_anim_s {
 } iqm_anim_t;
 
 
-enum class iqm_anim_flag {
+enum class iqm_anim_flag : uint32_t {
     IQM_ANIM_FLAG_LOOP = 1<<0
 };
 
@@ -437,6 +437,25 @@ model_t *load_iqm_file(const char*file_path) {
         }
 
     }
+    // --------------------------------------------------
+
+    // --------------------------------------------------
+    // Parse animations (framegroups)
+    // --------------------------------------------------
+    if(iqm_header->n_anims > 0) {
+        const iqm_anim_t *iqm_framegroups = (const iqm_anim_t*)(iqm_data + iqm_header->ofs_anims);
+        for(uint32_t i = 0; i < iqm_header->n_anims; i++) {
+            const char* framegroup_name = (const char*) (iqm_data + iqm_header->ofs_text + iqm_framegroups[i].name);
+            log_printf("Framegroup: %d, \"%s\"\n", i, framegroup_name);
+            log_printf("\tStart Frame: %d\n", iqm_framegroups[i].first_frame);
+            log_printf("\tFrames: %d\n", iqm_framegroups[i].n_frames);
+            log_printf("\tFramerate: %f\n", iqm_framegroups[i].framerate);
+            log_printf("\tFlags: %d\n", iqm_framegroups[i].flags);
+            log_printf("\t\tLoop?: %d\n", iqm_framegroups[i].flags & (uint32_t) iqm_anim_flag::IQM_ANIM_FLAG_LOOP);
+
+        }
+    }
+    // --------------------------------------------------
 
 
     free(iqm_data);
