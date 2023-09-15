@@ -132,12 +132,12 @@ typedef struct iqm_bounds_s {
 typedef struct iqm_extension_s {
     uint32_t name;
     uint32_t n_data, ofs_data;
-    uint32_t ofs_extensions; // Pointer to next extension?
+    uint32_t ofs_extensions; // Linked list pointer to next extension. (As byte offset from start of IQM file)
 } iqm_extension_t;
 
 
 typedef struct iqm_ext_fte_mesh_s {
-    uint32_t contents;      // default: CONTENTS_BODY
+    uint32_t contents;      // default: CONTENTS_BODY (0x02000000)
     uint32_t surfaceflags;  // Propagates to trace_surfaceflags
     uint32_t surfaceid;     // Body reported to QC via trace_surface
     uint32_t geomset;
@@ -272,7 +272,39 @@ void iqm_parse_float_array(const uint8_t *iqm_data, const iqm_vert_array_t *vert
     }
 }
 
+static const void *iqm_find_extension(const uint8_t *iqm_data, size_t iqm_data_size, const char *extension_name, size_t *extension_size) {
+    const iqm_header_t *iqm_header = (const iqm_header_t*) iqm_data;
+    const iqm_extension_t *iqm_extension;
 
+    iqm_extension = (const iqm_extension_t *) (iqm_data + iqm_header->ofs_extensions);
+
+    for(uint16_t i = 0; i < iqm_header->n_extensions; i++) {
+        // If past end of file, stop.
+        if((const uint8_t *)iqm_extension > (iqm_data + iqm_data_size)) {
+            break;
+        }
+        // If extension name is invalid, stop.
+        if(iqm_extension->name > iqm_header->n_text) {
+            break;
+        }
+        // If extension data pointer is past end of file, stop.
+        if(iqm_extension->ofs_data + iqm_extension->n_data > iqm_data_size) {
+            break;
+        }
+        // If name matches what we're looking for, return this extension
+        const char *cur_extension_name = (const char*) ((iqm_data + iqm_header->ofs_text) + iqm_extension->name);
+        if(strcmp(cur_extension_name, extension_name) == 0) {
+            *extension_size = iqm_extension->n_data;
+            return iqm_data + iqm_extension->ofs_data;
+        }
+        
+        // Advance to next entry in linked list
+        iqm_extension = (const iqm_extension_t *) (iqm_data + iqm_extension->ofs_extensions);
+    }
+
+    *extension_size = 0;
+    return nullptr;
+}
 
 
 model_t *load_iqm_file(const char*file_path) {
@@ -284,7 +316,7 @@ model_t *load_iqm_file(const char*file_path) {
     fread(iqm_data, file_len, 1, f);
     fclose(f);
 
-    iqm_header_t *iqm_header = (iqm_header_t*) iqm_data;
+    const iqm_header_t *iqm_header = (const iqm_header_t*) iqm_data;
     // TODO - Let's get quick-n-dirty to load up the vertices
 
     if(memcmp(iqm_header->magic, IQM_MAGIC, sizeof(iqm_header->magic))) {
@@ -304,6 +336,11 @@ model_t *load_iqm_file(const char*file_path) {
 
     const iqm_vert_array_t *iqm_verts_pos = nullptr;
     const iqm_vert_array_t *iqm_verts_uv = nullptr;
+    const iqm_vert_array_t *iqm_verts_nor = nullptr;
+    const iqm_vert_array_t *iqm_verts_tan = nullptr;
+    const iqm_vert_array_t *iqm_verts_color = nullptr;
+    const iqm_vert_array_t *iqm_verts_bone_idxs = nullptr;
+    const iqm_vert_array_t *iqm_verts_bone_weights = nullptr;
 
 
     const iqm_vert_array_t *vert_arrays = (const iqm_vert_array_t*)(iqm_data + iqm_header->ofs_vert_arrays);
@@ -318,6 +355,30 @@ model_t *load_iqm_file(const char*file_path) {
         }
         else if((iqm_vert_array_type) vert_arrays[i].type == iqm_vert_array_type::IQM_VERT_UV) {
             iqm_verts_uv = &vert_arrays[i];
+        }
+        else if((iqm_vert_array_type) vert_arrays[i].type == iqm_vert_array_type::IQM_VERT_NOR) {
+            iqm_verts_nor = &vert_arrays[i];
+        }
+        else if((iqm_vert_array_type) vert_arrays[i].type == iqm_vert_array_type::IQM_VERT_TAN) {
+            // Only use tangents if float and if each tangent is a 4D vector:
+            if((iqm_dtype) vert_arrays[i].format == iqm_dtype::IQM_DTYPE_FLOAT && vert_arrays[i].size == 4) {
+                iqm_verts_tan = &vert_arrays[i];
+            }
+            else {
+                log_printf("Warning: IQM vertex normals array (idx: %d, type: %d, fmt: %d, size: %d) is not 4D float array.\n", i, vert_arrays[i].type, vert_arrays[i].format, vert_arrays[i].size);
+            }
+        }
+        else if((iqm_vert_array_type) vert_arrays[i].type == iqm_vert_array_type::IQM_VERT_COLOR) {
+            iqm_verts_color = &vert_arrays[i];
+        }
+        else if((iqm_vert_array_type) vert_arrays[i].type == iqm_vert_array_type::IQM_VERT_BONE_IDXS) {
+            iqm_verts_bone_idxs = &vert_arrays[i];
+        }
+        else if((iqm_vert_array_type) vert_arrays[i].type == iqm_vert_array_type::IQM_VERT_BONE_WEIGHTS) {
+            iqm_verts_bone_weights = &vert_arrays[i];
+        }
+        else {
+            log_printf("Warning: Unrecognized IQM vertex array type (idx: %d, type: %d, fmt: %d, size: %d)\n", i, vert_arrays[i].type, vert_arrays[i].format, vert_arrays[i].size);
         }
     }
 
@@ -458,10 +519,62 @@ model_t *load_iqm_file(const char*file_path) {
     // --------------------------------------------------
 
 
+    // --------------------------------------------------
+    // Parse IQM per-frame mins/maxs to compute overall mins/maxs
+    // --------------------------------------------------
+    const iqm_bounds_t *iqm_frame_bounds = (const iqm_bounds_t *)(iqm_data + iqm_header->ofs_bounds);
+    if(iqm_header->ofs_bounds != 0) {
+        // TODO - Compute overall model mins / maxes by finding the most extreme points for all frames:
+        for(uint16_t i = 0; i < iqm_header->n_frames; i++) {
+            // vec3_t frame_mins;
+            // frame_mins.pos[0] = iqm_frame_bounds[i].mins[0];
+            // frame_mins.pos[1] = iqm_frame_bounds[i].mins[1];
+            // frame_mins.pos[2] = iqm_frame_bounds[i].mins[2];
+            // vec3_t frame_maxs;
+            // frame_maxs.pos[0] = iqm_frame_bounds[i].maxs[0];
+            // frame_maxs.pos[1] = iqm_frame_bounds[i].maxs[1];
+            // frame_maxs.pos[2] = iqm_frame_bounds[i].maxs[2];
+            log_printf("Frame [%d] bounds: (%f,%f,%f) (%f,%f,%f)\n", i, 
+                iqm_frame_bounds[i].mins[0], iqm_frame_bounds[i].mins[1], iqm_frame_bounds[i].mins[2],
+                iqm_frame_bounds[i].maxs[0],iqm_frame_bounds[i].maxs[1], iqm_frame_bounds[i].maxs[2]
+            );
+        }
+    }
+    // --------------------------------------------------
+
+    // --------------------------------------------------
+    // Find and parse FTE_MESH FTE IQM extension
+    // --------------------------------------------------
+    size_t iqm_fte_ext_mesh_size;
+    const iqm_ext_fte_mesh_t *iqm_fte_ext_mesh = (const iqm_ext_fte_mesh_t *) iqm_find_extension(iqm_data, file_len, "FTE_MESH", &iqm_fte_ext_mesh_size);
+    size_t iqm_fte_ext_event_size;
+    const iqm_ext_fte_event_t *iqm_fte_ext_event = (const iqm_ext_fte_event_t*) iqm_find_extension(iqm_data, file_len, "FTE_EVENT", &iqm_fte_ext_event_size);
+    size_t iqm_fte_ext_skin_size;
+    const iqm_ext_fte_skin_t *iqm_fte_ext_skin = (const iqm_ext_fte_skin_t*) iqm_find_extension(iqm_data, file_len, "FTE_SKINS", &iqm_fte_ext_skin_size);
+
+
+    // TODO - Do something with the above extensions data
+    if(iqm_fte_ext_mesh != nullptr) {
+        for(uint16_t i = 0; i < iqm_header->n_meshes; i++) {
+            log_printf("IQM FTE Extension \"FTE_MESH \" mesh %d\n", i);
+            log_printf("\tcontents %d\n", iqm_fte_ext_mesh[i].contents);
+            log_printf("\tsurfaceflags %d\n", iqm_fte_ext_mesh[i].surfaceflags);
+            log_printf("\tsurfaceid %d\n", iqm_fte_ext_mesh[i].surfaceid);
+            log_printf("\tgeomset %d\n", iqm_fte_ext_mesh[i].geomset);
+            log_printf("\tgeomid %d\n", iqm_fte_ext_mesh[i].geomid);
+            log_printf("\tmin_dist %d\n", iqm_fte_ext_mesh[i].min_dist); // LOD min distance
+            log_printf("\tmax_dist %d\n", iqm_fte_ext_mesh[i].max_dist); // LOD max distance
+        }
+    }
+    // --------------------------------------------------
+
+
+    // TODO - Find and parse FTE_EVENT extension 
+    // TODO - Find and parse FTE_MESH extension 
+    // TODO - Find and parse FTE_SKINS extension 
+
     free(iqm_data);
     return model;
-    // FIXME - massive memory leaks happening here
-
 
 
     // TODO - Free iqm_data
