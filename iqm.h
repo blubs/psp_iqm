@@ -548,10 +548,9 @@ model_t *load_iqm_file(const char*file_path) {
     size_t iqm_fte_ext_mesh_size;
     const iqm_ext_fte_mesh_t *iqm_fte_ext_mesh = (const iqm_ext_fte_mesh_t *) iqm_find_extension(iqm_data, file_len, "FTE_MESH", &iqm_fte_ext_mesh_size);
     size_t iqm_fte_ext_event_size;
-    const iqm_ext_fte_event_t *iqm_fte_ext_event = (const iqm_ext_fte_event_t*) iqm_find_extension(iqm_data, file_len, "FTE_EVENT", &iqm_fte_ext_event_size);
+    const iqm_ext_fte_event_t *iqm_fte_ext_events = (const iqm_ext_fte_event_t*) iqm_find_extension(iqm_data, file_len, "FTE_EVENT", &iqm_fte_ext_event_size);
     size_t iqm_fte_ext_skin_size;
     const iqm_ext_fte_skin_t *iqm_fte_ext_skin = (const iqm_ext_fte_skin_t*) iqm_find_extension(iqm_data, file_len, "FTE_SKINS", &iqm_fte_ext_skin_size);
-
 
     // TODO - Do something with the above extensions data
     if(iqm_fte_ext_mesh != nullptr) {
@@ -564,6 +563,29 @@ model_t *load_iqm_file(const char*file_path) {
             log_printf("\tgeomid %d\n", iqm_fte_ext_mesh[i].geomid);
             log_printf("\tmin_dist %d\n", iqm_fte_ext_mesh[i].min_dist); // LOD min distance
             log_printf("\tmax_dist %d\n", iqm_fte_ext_mesh[i].max_dist); // LOD max distance
+        }
+    }
+
+    uint16_t iqm_fte_ext_event_n_events = iqm_fte_ext_event_size / sizeof(iqm_ext_fte_event_t);
+    log_printf("FTE_EVENTS parsed size %d\n", iqm_fte_ext_event_size);
+    log_printf("num FTE_EVENTS %d\n", iqm_fte_ext_event_n_events);
+    log_printf("FTE event struct %d\n", sizeof(iqm_ext_fte_event_t));
+
+    if(iqm_fte_ext_events != nullptr) {
+
+        // TODO - Linked list...
+        for(uint16_t i = 0; i < iqm_fte_ext_event_n_events; i++) {
+            log_printf("IQM FTE Extension \"FTE_EVENT \" event %d\n", i);
+            log_printf("\tanim: %d\n", iqm_fte_ext_events[i].anim);
+            log_printf("\ttimestamp: %f\n", iqm_fte_ext_events[i].timestamp);
+            log_printf("\tevent_code: %d\n", iqm_fte_ext_events[i].event_code);
+            log_printf("\tevent_data_str idx: %d\n", iqm_fte_ext_events[i].event_data_str);
+            // TODO - if(iqm_fte_ext_events[i].event_data_str == 0)
+            // TODO   then this event has no data.
+            // TODO   Parsing it is okay tho', as it'll return an empty string.
+            // TODO   Will need to decide how we should handle the no-data event case.
+            const char* event_data = (const char*) (iqm_data + iqm_header->ofs_text + iqm_fte_ext_events[i].event_data_str);
+            log_printf("\tevent_data_str: \"%s\"\n", event_data);
         }
     }
     // --------------------------------------------------
