@@ -419,6 +419,9 @@ model_t *load_iqm_file(const char*file_path) {
     const iqm_mesh_t *iqm_meshes = (const iqm_mesh_t*)(iqm_data + iqm_header->ofs_meshes);
 
     for(uint32_t i = 0; i < iqm_header->n_meshes; i++) {
+        const char *material_name = (const char*) ((iqm_data + iqm_header->ofs_text) + iqm_meshes[i].material);
+        log_printf("Mesh[%d]: \"%s\"\n", i, material_name);
+
 
         uint32_t first_vert = iqm_meshes[i].first_vert_idx;
         uint32_t n_verts = iqm_meshes[i].n_verts;
