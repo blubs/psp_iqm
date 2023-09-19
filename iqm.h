@@ -546,14 +546,10 @@ model_t *load_iqm_file(const char*file_path) {
     // --------------------------------------------------
 
     // --------------------------------------------------
-    // Find and parse FTE_MESH FTE IQM extension
+    // Parse FTE_MESH IQM extension
     // --------------------------------------------------
     size_t iqm_fte_ext_mesh_size;
     const iqm_ext_fte_mesh_t *iqm_fte_ext_mesh = (const iqm_ext_fte_mesh_t *) iqm_find_extension(iqm_data, file_len, "FTE_MESH", &iqm_fte_ext_mesh_size);
-    size_t iqm_fte_ext_event_size;
-    const iqm_ext_fte_event_t *iqm_fte_ext_events = (const iqm_ext_fte_event_t*) iqm_find_extension(iqm_data, file_len, "FTE_EVENT", &iqm_fte_ext_event_size);
-    size_t iqm_fte_ext_skin_size;
-    const iqm_ext_fte_skin_t *iqm_fte_ext_skin = (const iqm_ext_fte_skin_t*) iqm_find_extension(iqm_data, file_len, "FTE_SKINS", &iqm_fte_ext_skin_size);
 
     // TODO - Do something with the above extensions data
     if(iqm_fte_ext_mesh != nullptr) {
@@ -569,6 +565,12 @@ model_t *load_iqm_file(const char*file_path) {
         }
     }
 
+
+    // --------------------------------------------------
+    // Parse FTE_EVENT IQM extension
+    // --------------------------------------------------
+    size_t iqm_fte_ext_event_size;
+    const iqm_ext_fte_event_t *iqm_fte_ext_events = (const iqm_ext_fte_event_t*) iqm_find_extension(iqm_data, file_len, "FTE_EVENT", &iqm_fte_ext_event_size);
     uint16_t iqm_fte_ext_event_n_events = iqm_fte_ext_event_size / sizeof(iqm_ext_fte_event_t);
     log_printf("FTE_EVENTS parsed size %d\n", iqm_fte_ext_event_size);
     log_printf("num FTE_EVENTS %d\n", iqm_fte_ext_event_n_events);
@@ -593,9 +595,30 @@ model_t *load_iqm_file(const char*file_path) {
     }
     // --------------------------------------------------
 
+    // --------------------------------------------------
+    // Parse FTE_SKIN IQM extension
+    // --------------------------------------------------
+    // size_t iqm_fte_ext_skin_size;
+    // const uint32_t *iqm_fte_ext_skin_n_skins = (const uint32_t*) iqm_find_extension(iqm_data, file_len, "FTE_SKINS", &iqm_fte_ext_skin_size);
 
-    // TODO - Find and parse FTE_EVENT extension 
-    // TODO - Find and parse FTE_MESH extension 
+    // // const iqm_ext_fte_skin_t *iqm_fte_ext_skins
+    // if(iqm_fte_ext_skin_n_skins != nullptr) {
+
+    //     if(iqm_fte_ext_skin_size >= (sizeof(uint32_t) * 2 * iqm_header->n_meshes)) {
+    //         const uint32_t n_skin_skinframes = iqm_fte_ext_skin_n_skins[0];
+    //         const uint32_t n_skin_meshskins = iqm_fte_ext_skin_n_skins[1];
+    //         size_t expected_skin_size = sizeof(iqm_ext_fte_skin_t) + sizeof(uint32_t) * iqm_header->n_meshes + sizeof(iqm_ext_fte_skin_t) * n_skin_skinframes + sizeof(iqm_ext_fte_skin_meshskin_t) * n_skin_meshskins;
+    //         if(iqm_fte_ext_skin_size == expected_skin_size) {
+    //             const iqm_ext_fte_skin_skinframe_t *skinframes = (const iqm_ext_fte_skin_skinframe_t *) (iqm_fte_ext_skin_n_skins + 2 + iqm_header->n_meshes);
+    //             const iqm_ext_fte_skin_meshskin_t *meshskins = (const iqm_ext_fte_skin_meshskin_t *) (skinframes + n_skin_skinframes);
+
+    //             // TODO - Print these? Not sure if we'll even want them... or if we should support them?
+    //         }
+    //     }
+    // }
+    // --------------------------------------------------
+
+
     // TODO - Find and parse FTE_SKINS extension 
 
     free(iqm_data);
