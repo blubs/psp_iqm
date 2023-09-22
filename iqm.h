@@ -1,4 +1,5 @@
 #include "logging.h"
+#include "math.h"
 
 
 #define IQM_MAGIC "INTERQUAKEMODEL"
