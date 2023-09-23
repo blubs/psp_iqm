@@ -184,27 +184,108 @@ typedef struct vertex_s {
 } vertex_t;
 
 
-typedef struct mesh_s {
-    // Number of vertices in submesh (FIXME - what is this exactly?)
+
+class Skeletal_Mesh {
+public:
+    // Number of vertices in mesh
     uint32_t n_verts;
-    // Number of triangles in submesh
+    // Number of triangles in mesh
     uint32_t n_tris;
     // Contains vertex indices
-    // TODO - Use whatever data struct sceGU expects as vert indices for triangles:
-    // unsigned short 
-    uint16_t *tri_verts;
+    uint16_t *tri_verts = nullptr;
     uint32_t n_tri_verts;
     uint32_t first_vert;
-} mesh_t;
+
+    // TODO - Geomset identifiers...
+    // TODO - Material identifiers...
+    // TODO - Other vertex attributes (bone_idxs, bone_weights, normals, tangents, colors)
+    // TODO - An array with pre-allocated memory for cur_posed_vertices after a skeleton pose is applied
+};
 
 
-// Temp container:
-typedef struct model_s {
+
+class Skeletal_Model {
+public:
     uint32_t n_verts;
-    vertex_t *verts;
+    vertex_t *verts = nullptr;
     uint32_t n_meshes;
-    mesh_t *meshes;
-} model_t;
+    // List of submeshes
+    Skeletal_Mesh *meshes;
+
+
+    // TODO - Bone data (parent indices, rest pose trans/rot/scale, rest pose matrices, inverse rest pose matrices)
+    // -----------------------------------
+    
+    // TODO - Animation data 
+    // TODO         (per-framegroup per-frame per-bone trans/rot/scale)
+    // TODO         (per-framegroup animation FPS)
+    // TODO         (per-framegroup animation events)
+    // TODO         (per-framegroup animation stop type) (loop or stop)
+    // const char *name; // List of bone names
+    // uint16_t parent_bone_idx; // List of bone parent indices, -1: no parent
+    // // Contains rest-pose translation rotation and scale relative to parent bone
+    // // float translate[3], rotate[4], scale[3];
+
+
+
+    //
+    // Creates a `Skeletal_Skeleton` object that uses this model's skeleton / animation skeleton pose information.
+    //
+    Skeletal_Skeleton *create_skeleton() {
+        // TODO
+    }
+
+
+    // 
+    // Processes an animation's elapsed framegroup events.
+    //
+    void process_anim_events(int framegroup_idx, float start_frametime, float end_frametime) {
+        // TODO - Add event callback somehow to this function
+    }
+
+    // 
+    // Applies a `Skeletal_Skeleton` object's current built pose to the model. 
+    // Populates each meshe's `cur_posed_vertices` with final model-space vertex locations.
+    // 
+    void apply_skeleton_pose(const Skeletal_Skeleton *skeleton) {
+
+        // TODO - A Skeleton may have been built on top of a different model. 
+        // TODO   If built on same model, use bone indices directly
+        // TODO   If built on different model, need to somehow match up 
+        // TODO   this model's bones to the skeleton model's bones by bone name
+        // TODO - Will likely need to create some sort of lookup table for 
+        // TODO   translating bone indices from one model to the other.
+        // TODO - The core idea is that shared bones are used, all others ignored.
+
+
+
+        // TODO - Compute and cache 3x4 rest pose inverse...
+        // TODO - Does this need to be a 4x4? What shape does the inverse take?
+        // TODO - When do we need the parent'bone's inverse rest pose?
+        // Final pose =
+        //  weight_a * (bone_a * inv_rest_pose_a * vert)
+        //  + weight_b * (bone_b * inv_rest_pose_b * vert)
+        //  + weight_c * (bone_c * inv_rest_pose_c * vert)
+        // 
+    }
+};
+
+
+
+class Skeletal_Skeleton {
+public:
+    const Skeletal_Model *model; // Animation / skeleton data is pulled from this model
+
+    // TODO - Structs to hold current built skeleton pose
+
+    void build(int framegroup_idx, float frametime) {
+        // TODO - Populate current pose matrices
+    }
+};
+
+
+
+
 
 
 
