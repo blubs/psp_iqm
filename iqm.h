@@ -191,10 +191,10 @@ public:
     uint32_t n_verts;
     // Number of triangles in mesh
     uint32_t n_tris;
-    // Contains vertex indices
-    uint16_t *tri_verts = nullptr;
     uint32_t n_tri_verts;
     uint32_t first_vert;
+    // Contains vertex indices
+    uint16_t *tri_verts = nullptr;
 
     // TODO - Geomset identifiers...
     // TODO - Material identifiers...
@@ -206,25 +206,54 @@ public:
 
 class Skeletal_Model {
 public:
+    // List of all mesh vertices
     uint32_t n_verts;
+    Vec3 *vert_rest_positions; // Contains the rest position of all vertices
+    // Contains the drawn vertex struct.
+    // The vertex positions in this array are updated whenever a skeleton pose is applied via `apply_skeleton_pose`
     vertex_t *verts = nullptr;
+
+
+    // List of meshes
     uint32_t n_meshes;
-    // List of submeshes
     Skeletal_Mesh *meshes;
+
+
+    // List of bones
+    uint32_t n_bones;
+    char **bone_names;
+    uint16_t *bone_parent_idx;
+    Vec3 *bone_rest_pos;
+    Quat *bone_rest_rot;
+    Vec3 *bone_rest_scale;
+
+
+    // Animation frames data
+    uint16_t n_frames;
+    // TODO - IQM has a parent index for each pose, do we need it? is it always the same as the parent's bone parent idx?
+    Vec3 *frames_bone_pos;
+    Quat *frames_bone_rot;
+    Vec3 *frames_bone_scale;
+
+
+    // Animation framegroup data
+    uint16_t n_framegroups;
+    uint16_t *framegroup_start_frame;
+    uint16_t *framegroup_n_frames;
+    float *framegroup_fps;
+    bool *framegroup_loop;
+
+
+    // Animation framegroup FTE events data
+    uint16_t *framegroup_n_events;
+    uint16_t **framegroup_event_code;
+    char **framegroup_event_data_str;
+    float **framegroup_event_data_time;
 
 
     // TODO - Bone data (parent indices, rest pose trans/rot/scale, rest pose matrices, inverse rest pose matrices)
     // -----------------------------------
-    
-    // TODO - Animation data 
-    // TODO         (per-framegroup per-frame per-bone trans/rot/scale)
-    // TODO         (per-framegroup animation FPS)
-    // TODO         (per-framegroup animation events)
-    // TODO         (per-framegroup animation stop type) (loop or stop)
-    // const char *name; // List of bone names
-    // uint16_t parent_bone_idx; // List of bone parent indices, -1: no parent
-    // // Contains rest-pose translation rotation and scale relative to parent bone
-    // // float translate[3], rotate[4], scale[3];
+
 
 
 
@@ -700,8 +729,6 @@ model_t *load_iqm_file(const char*file_path) {
     // }
     // --------------------------------------------------
 
-
-    // TODO - Find and parse FTE_SKINS extension 
 
     free(iqm_data);
     return model;
