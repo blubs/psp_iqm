@@ -1,10 +1,11 @@
 #include "logging.h"
-#include "math.h"
+// #include "math.hpp"
 
 
 #define IQM_MAGIC "INTERQUAKEMODEL"
 #define IQM_VERSION_1 1
 #define IQM_VERSION_2 2
+#define IQM_MAX_BONES 256
 
 
 typedef struct vec3_s {
@@ -16,9 +17,13 @@ typedef struct vec2_s {
     float pos[2];
 } vec2_t;
 
+typedef struct quat_s {
+    float x,y,z;
+    float w;
+} quat_t;
 
 
-// TODO - Define needed structs
+
 typedef struct iqm_header_s {
     char magic[16];
     uint32_t version;
@@ -185,8 +190,7 @@ typedef struct vertex_s {
 
 
 
-class Skeletal_Mesh {
-public:
+typedef struct skeletal_mesh_s {
     // Number of vertices in mesh
     uint32_t n_verts;
     // Number of triangles in mesh
@@ -200,40 +204,42 @@ public:
     // TODO - Material identifiers...
     // TODO - Other vertex attributes (bone_idxs, bone_weights, normals, tangents, colors)
     // TODO - An array with pre-allocated memory for cur_posed_vertices after a skeleton pose is applied
-};
+} skeletal_mesh_t;
 
 
 
-class Skeletal_Model {
-public:
+typedef struct skeletal_model_s {
     // List of all mesh vertices
     uint32_t n_verts;
-    Vec3 *vert_rest_positions; // Contains the rest position of all vertices
+    vec3_t *vert_rest_positions; // Contains the rest position of all vertices
     // Contains the drawn vertex struct.
     // The vertex positions in this array are updated whenever a skeleton pose is applied via `apply_skeleton_pose`
     vertex_t *verts = nullptr;
+    float *vert_bone_weights; // 4 bone weights per vertex
+    uint8_t *vert_bone_idxs; // 4 bone indices per vertex
 
 
     // List of meshes
     uint32_t n_meshes;
-    Skeletal_Mesh *meshes;
+    skeletal_mesh_t *meshes;
 
 
     // List of bones
     uint32_t n_bones;
     char **bone_names;
     uint16_t *bone_parent_idx;
-    Vec3 *bone_rest_pos;
-    Quat *bone_rest_rot;
-    Vec3 *bone_rest_scale;
+
+    vec3_t *bone_rest_pos;
+    quat_t *bone_rest_rot; // TODO - replace with quats...
+    vec3_t *bone_rest_scale;
 
 
     // Animation frames data
     uint16_t n_frames;
     // TODO - IQM has a parent index for each pose, do we need it? is it always the same as the parent's bone parent idx?
-    Vec3 *frames_bone_pos;
-    Quat *frames_bone_rot;
-    Vec3 *frames_bone_scale;
+    vec3_t *frames_bone_pos;
+    quat_t *frames_bone_rot;
+    vec3_t *frames_bone_scale;
 
 
     // Animation framegroup data
@@ -254,63 +260,68 @@ public:
     // TODO - Bone data (parent indices, rest pose trans/rot/scale, rest pose matrices, inverse rest pose matrices)
     // -----------------------------------
 
-
-
-
+    // Skeletal_Model() {}
+    // ~Skeletal_Model() {};
     //
     // Creates a `Skeletal_Skeleton` object that uses this model's skeleton / animation skeleton pose information.
     //
-    Skeletal_Skeleton *create_skeleton() {
-        // TODO
-    }
+    // Skeletal_Skeleton *create_skeleton() {
+    //     // TODO
+    // }
 
 
     // 
     // Processes an animation's elapsed framegroup events.
     //
-    void process_anim_events(int framegroup_idx, float start_frametime, float end_frametime) {
-        // TODO - Add event callback somehow to this function
-    }
+    // void process_anim_events(int framegroup_idx, float start_frametime, float end_frametime) {
+    //     // TODO - Add event callback somehow to this function
+    // }
 
     // 
     // Applies a `Skeletal_Skeleton` object's current built pose to the model. 
     // Populates each meshe's `cur_posed_vertices` with final model-space vertex locations.
     // 
-    void apply_skeleton_pose(const Skeletal_Skeleton *skeleton) {
+    // void apply_skeleton_pose(const Skeletal_Skeleton *skeleton) {
 
-        // TODO - A Skeleton may have been built on top of a different model. 
-        // TODO   If built on same model, use bone indices directly
-        // TODO   If built on different model, need to somehow match up 
-        // TODO   this model's bones to the skeleton model's bones by bone name
-        // TODO - Will likely need to create some sort of lookup table for 
-        // TODO   translating bone indices from one model to the other.
-        // TODO - The core idea is that shared bones are used, all others ignored.
-
-
-
-        // TODO - Compute and cache 3x4 rest pose inverse...
-        // TODO - Does this need to be a 4x4? What shape does the inverse take?
-        // TODO - When do we need the parent'bone's inverse rest pose?
-        // Final pose =
-        //  weight_a * (bone_a * inv_rest_pose_a * vert)
-        //  + weight_b * (bone_b * inv_rest_pose_b * vert)
-        //  + weight_c * (bone_c * inv_rest_pose_c * vert)
-        // 
-    }
-};
+    //     // TODO - A Skeleton may have been built on top of a different model. 
+    //     // TODO   If built on same model, use bone indices directly
+    //     // TODO   If built on different model, need to somehow match up 
+    //     // TODO   this model's bones to the skeleton model's bones by bone name
+    //     // TODO - Will likely need to create some sort of lookup table for 
+    //     // TODO   translating bone indices from one model to the other.
+    //     // TODO - The core idea is that shared bones are used, all others ignored.
 
 
 
-class Skeletal_Skeleton {
-public:
-    const Skeletal_Model *model; // Animation / skeleton data is pulled from this model
+    //     // TODO - Compute and cache 3x4 rest pose inverse...
+    //     // TODO - Does this need to be a 4x4? What shape does the inverse take?
+    //     // TODO - When do we need the parent'bone's inverse rest pose?
+    //     // Final pose =
+    //     //  weight_a * (bone_a * inv_rest_pose_a * vert)
+    //     //  + weight_b * (bone_b * inv_rest_pose_b * vert)
+    //     //  + weight_c * (bone_c * inv_rest_pose_c * vert)
+    //     // 
+    // }
+} skeletal_model_t;
+
+
+
+typedef struct skeletal_skeleton_s {
+    const skeletal_model_t *model; // Animation / skeleton data is pulled from this model
 
     // TODO - Structs to hold current built skeleton pose
+    // void build(int framegroup_idx, float frametime) {
+    //     // TODO - Populate current pose matrices
+    // }
+} skeletal_skeleton_t;
 
-    void build(int framegroup_idx, float frametime) {
-        // TODO - Populate current pose matrices
-    }
-};
+
+
+
+
+
+
+// Call sequence looks like this:
 
 
 
@@ -330,8 +341,6 @@ void iqm_parse_float_array(const uint8_t *iqm_data, const iqm_vert_array_t *vert
     }
     const uint8_t *iqm_array_data = iqm_data + vert_array->ofs;
 
-
-    // const int8_t *in = (const int8_t*) iqm_array_data;
 
     // Special cases:
     if(dtype == iqm_dtype::IQM_DTYPE_FLOAT && element_len == iqm_values_to_read) {
@@ -383,6 +392,69 @@ void iqm_parse_float_array(const uint8_t *iqm_data, const iqm_vert_array_t *vert
     }
 }
 
+
+//
+// Parses an IQM Vertex array and converts all values to uint8_t
+//
+void iqm_parse_uint8_array(const uint8_t *iqm_data, const iqm_vert_array_t *vert_array, uint8_t *out, size_t n_elements, size_t element_len, uint8_t max_value) {
+    iqm_dtype dtype = (iqm_dtype) vert_array->format;
+    size_t iqm_values_to_read = (size_t) vert_array->size;
+    if(vert_array->ofs == 0) {
+        iqm_values_to_read = 0;
+        dtype = iqm_dtype::IQM_DTYPE_UBYTE;
+    }
+    const uint8_t *iqm_array_data = iqm_data + vert_array->ofs;
+
+
+    // Special cases:
+    if(dtype == iqm_dtype::IQM_DTYPE_FLOAT && element_len == iqm_values_to_read) {
+        memcpy(out, (const float*) iqm_array_data, sizeof(float) * element_len * n_elements);
+        return;
+    }
+    if(dtype == iqm_dtype::IQM_DTYPE_HALF) {
+        iqm_values_to_read = 0;
+    }
+
+    // For all other dtype cases, parse each value from IQM:
+    for(size_t i = 0; i < n_elements; i++) {
+        // Read the first `iqm_values_to_read` values for vector `i`
+        for(size_t j = 0; j < element_len && j < iqm_values_to_read; j++) {
+
+            uint8_t in_val;
+            switch(dtype) {
+                case iqm_dtype::IQM_DTYPE_FLOAT:    // Skip, these values don't make sense
+                case iqm_dtype::IQM_DTYPE_DOUBLE:   // Skip, these values don't make sense
+                default:
+                    in_val = 0;
+                    iqm_values_to_read = 0;
+                    break;
+                case iqm_dtype::IQM_DTYPE_BYTE:     // Interpret as signed
+                case iqm_dtype::IQM_DTYPE_UBYTE:
+                    in_val = ((const uint8_t*)iqm_array_data)[i * iqm_values_to_read + j];
+                    break;
+                case iqm_dtype::IQM_DTYPE_SHORT:    // Interpret as signed
+                case iqm_dtype::IQM_DTYPE_USHORT:
+                    in_val = (uint8_t) ((const uint16_t*)iqm_array_data)[i * iqm_values_to_read + j];
+                    break;
+                case iqm_dtype::IQM_DTYPE_INT:      // Interpret as signed
+                case iqm_dtype::IQM_DTYPE_UINT:
+                    in_val = (uint8_t) ((const uint32_t*)iqm_array_data)[i * iqm_values_to_read + j];
+                    break;
+            }
+
+            if(in_val >= max_value) {
+                // TODO - Mark invalid, return that array had invalid values
+                in_val = 0;
+            }
+            out[i * element_len + j] = in_val;
+        }
+        // Pad the remaining `element_len - iqm_values_to_read` values for vector `i`
+        for(size_t j = iqm_values_to_read; j < element_len; j++) {
+            out[i * element_len + j] = 0;
+        }
+    }
+}
+
 static const void *iqm_find_extension(const uint8_t *iqm_data, size_t iqm_data_size, const char *extension_name, size_t *extension_size) {
     const iqm_header_t *iqm_header = (const iqm_header_t*) iqm_data;
     const iqm_extension_t *iqm_extension;
@@ -418,7 +490,7 @@ static const void *iqm_find_extension(const uint8_t *iqm_data, size_t iqm_data_s
 }
 
 
-model_t *load_iqm_file(const char*file_path) {
+skeletal_model_t *load_iqm_file(const char*file_path) {
     FILE *f = fopen(file_path, "rb");
     fseek(f, 0, SEEK_END);
     size_t file_len = ftell(f);
@@ -495,14 +567,22 @@ model_t *load_iqm_file(const char*file_path) {
 
 
 
-    model_t *model = (model_t*) malloc(sizeof(model_t));
-    model->n_verts = iqm_header->n_verts;
-    model->verts = (vertex_t*) malloc(sizeof(vertex_t) * model->n_verts);
-    model->n_meshes = iqm_header->n_meshes;
-    model->meshes = (mesh_t*) malloc(sizeof(mesh_t) * model->n_meshes);
 
-    vec3_t *verts_pos = (vec3_t*) malloc(sizeof(vec3_t) * model->n_verts);
-    vec2_t *verts_uv = (vec2_t*) malloc(sizeof(vec2_t) * model->n_verts);
+    skeletal_model_t *skel_model = (skeletal_model_t*) malloc(sizeof(skeletal_model_t));
+    skel_model->n_verts = iqm_header->n_verts;
+    skel_model->verts = (vertex_t*) malloc(sizeof(vertex_t) * skel_model->n_verts);
+    skel_model->vert_rest_positions = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_verts);
+    skel_model->n_meshes = iqm_header->n_meshes;
+    skel_model->meshes = (skeletal_mesh_t*) malloc(sizeof(skeletal_mesh_t*) * skel_model->n_meshes);
+
+    // vertex_t *verts = nullptr;
+    // model_t *model = (model_t*) malloc(sizeof(model_t));
+    // model->n_verts = iqm_header->n_verts;
+    // model->verts = (vertex_t*) malloc(sizeof(vertex_t) * model->n_verts);
+    // model->n_meshes = iqm_header->n_meshes;
+    // model->meshes = (mesh_t*) malloc(sizeof(mesh_t) * model->n_meshes);
+    vec3_t *verts_pos = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_verts);
+    vec2_t *verts_uv = (vec2_t*) malloc(sizeof(vec2_t) * skel_model->n_verts);
 
     // ------------------------------------------------------------------------
     // Convert verts_pos / verts_uv datatypes to floats 
@@ -510,18 +590,26 @@ model_t *load_iqm_file(const char*file_path) {
     vec3_t default_vert = {0,0,0};
     vec2_t default_uv = {0,0};
 
-    iqm_parse_float_array(iqm_data, iqm_verts_pos, (float*) verts_pos, model->n_verts, 3, (float*) &default_vert);
-    iqm_parse_float_array(iqm_data, iqm_verts_uv, (float*) verts_uv, model->n_verts, 2, (float*) &default_uv);
+    iqm_parse_float_array(iqm_data, iqm_verts_pos, (float*) verts_pos, skel_model->n_verts, 3, (float*) &default_vert);
+    iqm_parse_float_array(iqm_data, iqm_verts_uv, (float*) verts_uv, skel_model->n_verts, 2, (float*) &default_uv);
+
+
+    float default_bone_idxs[] = {-1.0f, -1.0f, -1.0f, -1.0f};
+    iqm_parse_float_array(iqm_data, iqm_verts_bone_weights, skel_model->vert_bone_weights,  skel_model->n_verts, 4, (float*) &default_bone_idxs);
+    iqm_parse_uint8_array(iqm_data, iqm_verts_bone_idxs,    skel_model->vert_bone_idxs,     skel_model->n_verts, 4, (uint8_t) std::min( (int) iqm_header->n_joints, (int) IQM_MAX_BONES));
+
+
 
     // Populate verts array:
-    for(uint32_t i = 0; i < model->n_verts; i++) {
-        model->verts[i].x = verts_pos[i].pos[0]; 
-        model->verts[i].y = verts_pos[i].pos[1];
-        model->verts[i].z = verts_pos[i].pos[2];
-        model->verts[i].u = verts_uv[i].pos[0];
-        model->verts[i].v = verts_uv[i].pos[1];
-        // model->verts[i].color = 0xffffffff;
-        model->verts[i].color = 0x00000000;
+    for(uint32_t i = 0; i < skel_model->n_verts; i++) {
+        skel_model->verts[i].x = verts_pos[i].pos[0]; 
+        skel_model->verts[i].y = verts_pos[i].pos[1];
+        skel_model->verts[i].z = verts_pos[i].pos[2];
+        skel_model->verts[i].u = verts_uv[i].pos[0];
+        skel_model->verts[i].v = verts_uv[i].pos[1];
+        // skel_model->verts[i].color = 0xffffffff;
+        skel_model->verts[i].color = 0x00000000;
+        // TODO - Parse other potentially optional vertex attribute arrays
     }
     // ------------------------------------------------------------------------
 
@@ -538,9 +626,9 @@ model_t *load_iqm_file(const char*file_path) {
         uint32_t n_verts = iqm_meshes[i].n_verts;
         uint32_t first_tri = iqm_meshes[i].first_tri;
         uint32_t n_tris = iqm_meshes[i].n_tris;
-        model->meshes[i].n_tri_verts = n_tris * 3;
-        model->meshes[i].tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * n_tris * 3);
-        model->meshes[i].first_vert = first_vert;
+        skel_model->meshes[i].n_tri_verts = n_tris * 3;
+        skel_model->meshes[i].tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * n_tris * 3);
+        skel_model->meshes[i].first_vert = first_vert;
 
 
         for(uint32_t j = 0; j < n_tris; j++) {
@@ -550,12 +638,12 @@ model_t *load_iqm_file(const char*file_path) {
             // uint16_t vert_a = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[0];
             // uint16_t vert_b = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[1];
             // uint16_t vert_c = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[2];
-            model->meshes[i].tri_verts[j*3 + 0] = vert_a;
-            model->meshes[i].tri_verts[j*3 + 1] = vert_b;
-            model->meshes[i].tri_verts[j*3 + 2] = vert_c;
+            skel_model->meshes[i].tri_verts[j*3 + 0] = vert_a;
+            skel_model->meshes[i].tri_verts[j*3 + 1] = vert_b;
+            skel_model->meshes[i].tri_verts[j*3 + 2] = vert_c;
         }
-        model->meshes[i].n_verts = n_verts;
-        model->meshes[i].n_tris = n_tris;
+        skel_model->meshes[i].n_verts = n_verts;
+        skel_model->meshes[i].n_tris = n_tris;
     }
 
     // --------------------------------------------------
@@ -731,9 +819,6 @@ model_t *load_iqm_file(const char*file_path) {
 
 
     free(iqm_data);
-    return model;
-
-
-    // TODO - Free iqm_data
+    return skel_model;
 }
 
