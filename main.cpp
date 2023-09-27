@@ -153,7 +153,7 @@ int main(int argc, char *argv[]) {
     // int iqm_version = load_iqm_file("assets/zombie_with_anims.iqm");
     // iqm_header_t *iqm_header = load_iqm_file("assets/zombie_with_anims.iqm");
 
-    model_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
+    skeletal_model_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
 
 
     load_png_file("assets/zombie_tex_0.png", zombie_tex);

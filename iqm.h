@@ -230,7 +230,7 @@ typedef struct skeletal_model_s {
     uint16_t *bone_parent_idx;
 
     vec3_t *bone_rest_pos;
-    quat_t *bone_rest_rot; // TODO - replace with quats...
+    quat_t *bone_rest_rot;
     vec3_t *bone_rest_scale;
 
 
@@ -575,13 +575,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     skel_model->n_meshes = iqm_header->n_meshes;
     skel_model->meshes = (skeletal_mesh_t*) malloc(sizeof(skeletal_mesh_t*) * skel_model->n_meshes);
 
-    // vertex_t *verts = nullptr;
-    // model_t *model = (model_t*) malloc(sizeof(model_t));
-    // model->n_verts = iqm_header->n_verts;
-    // model->verts = (vertex_t*) malloc(sizeof(vertex_t) * model->n_verts);
-    // model->n_meshes = iqm_header->n_meshes;
-    // model->meshes = (mesh_t*) malloc(sizeof(mesh_t) * model->n_meshes);
-    vec3_t *verts_pos = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_verts);
     vec2_t *verts_uv = (vec2_t*) malloc(sizeof(vec2_t) * skel_model->n_verts);
 
     // ------------------------------------------------------------------------
@@ -590,12 +583,14 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     vec3_t default_vert = {0,0,0};
     vec2_t default_uv = {0,0};
 
-    iqm_parse_float_array(iqm_data, iqm_verts_pos, (float*) verts_pos, skel_model->n_verts, 3, (float*) &default_vert);
+    iqm_parse_float_array(iqm_data, iqm_verts_pos, (float*) skel_model->vert_rest_positions, skel_model->n_verts, 3, (float*) &default_vert);
     iqm_parse_float_array(iqm_data, iqm_verts_uv, (float*) verts_uv, skel_model->n_verts, 2, (float*) &default_uv);
 
 
-    float default_bone_idxs[] = {-1.0f, -1.0f, -1.0f, -1.0f};
-    iqm_parse_float_array(iqm_data, iqm_verts_bone_weights, skel_model->vert_bone_weights,  skel_model->n_verts, 4, (float*) &default_bone_idxs);
+    skel_model->vert_bone_weights = (float*) malloc(sizeof(float) * 4 * skel_model->n_verts);
+    skel_model->vert_bone_idxs = (uint8_t*) malloc(sizeof(uint8_t) * 4 * skel_model->n_verts);
+    float default_bone_weights[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    iqm_parse_float_array(iqm_data, iqm_verts_bone_weights, skel_model->vert_bone_weights,  skel_model->n_verts, 4, (float*) &default_bone_weights);
     iqm_parse_uint8_array(iqm_data, iqm_verts_bone_idxs,    skel_model->vert_bone_idxs,     skel_model->n_verts, 4, (uint8_t) std::min( (int) iqm_header->n_joints, (int) IQM_MAX_BONES));
 
 
@@ -635,9 +630,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             uint16_t vert_a = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[0] - first_vert;
             uint16_t vert_b = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[1] - first_vert;
             uint16_t vert_c = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[2] - first_vert;
-            // uint16_t vert_a = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[0];
-            // uint16_t vert_b = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[1];
-            // uint16_t vert_c = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[2];
             skel_model->meshes[i].tri_verts[j*3 + 0] = vert_a;
             skel_model->meshes[i].tri_verts[j*3 + 1] = vert_b;
             skel_model->meshes[i].tri_verts[j*3 + 2] = vert_c;
@@ -650,15 +642,35 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // Parse bones
     // --------------------------------------------------
     log_printf("Parsing joints...\n");
+    skel_model->n_bones = iqm_header->n_joints;
+    skel_model->bone_names = (char**) malloc(sizeof(char*) * skel_model->n_bones);
+    skel_model->bone_parent_idx = (uint16_t*) malloc(sizeof(uint16_t) * skel_model->n_bones);
+    skel_model->bone_rest_pos = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_bones);
+    skel_model->bone_rest_rot = (quat_t*) malloc(sizeof(quat_t) * skel_model->n_bones);
+    skel_model->bone_rest_scale = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_bones);
 
     const iqm_joint_quaternion_t *iqm_joints = (const iqm_joint_quaternion_t*) (iqm_data + iqm_header->ofs_joints);
     for(uint32_t i = 0; i < iqm_header->n_joints; i++) {
         const char *joint_name = (const char*) ((iqm_data + iqm_header->ofs_text) + iqm_joints[i].name);
-        log_printf("Joint[%d]: \"%s\"\n", i, joint_name);
-        log_printf("\tParent bone: %d\n", iqm_joints[i].parent_joint_idx);
-        log_printf("\tPos: (%f, %f, %f)\n", iqm_joints[i].translate[0], iqm_joints[i].translate[1], iqm_joints[i].translate[2]);
-        log_printf("\tRot: (%f, %f, %f, %f)\n", iqm_joints[i].rotate[0], iqm_joints[i].rotate[1], iqm_joints[i].rotate[2]);
-        log_printf("\tScale: (%f, %f, %f)\n", iqm_joints[i].scale[0], iqm_joints[i].scale[1], iqm_joints[i].scale[2]);
+        skel_model->bone_names[i] = (char*) malloc(sizeof(char) * (strlen(joint_name) + 1));
+        strcpy(skel_model->bone_names[i], joint_name);
+        skel_model->bone_parent_idx[i] = iqm_joints[i].parent_joint_idx;
+        skel_model->bone_rest_pos[i].pos[0] = iqm_joints[i].translate[0];
+        skel_model->bone_rest_pos[i].pos[1] = iqm_joints[i].translate[1];
+        skel_model->bone_rest_pos[i].pos[2] = iqm_joints[i].translate[2];
+        skel_model->bone_rest_rot[i].x = iqm_joints[i].rotate[0];
+        skel_model->bone_rest_rot[i].y = iqm_joints[i].rotate[1];
+        skel_model->bone_rest_rot[i].z = iqm_joints[i].rotate[2];
+        skel_model->bone_rest_rot[i].w = iqm_joints[i].rotate[3];
+        skel_model->bone_rest_scale[i].pos[0] = iqm_joints[i].scale[0];
+        skel_model->bone_rest_scale[i].pos[1] = iqm_joints[i].scale[1];
+        skel_model->bone_rest_scale[i].pos[2] = iqm_joints[i].scale[2];
+
+        // log_printf("Joint[%d]: \"%s\"\n", i, joint_name);
+        // log_printf("\tParent bone: %d\n", iqm_joints[i].parent_joint_idx);
+        // log_printf("\tPos: (%f, %f, %f)\n", iqm_joints[i].translate[0], iqm_joints[i].translate[1], iqm_joints[i].translate[2]);
+        // log_printf("\tRot: (%f, %f, %f, %f)\n", iqm_joints[i].rotate[0], iqm_joints[i].rotate[1], iqm_joints[i].rotate[2]);
+        // log_printf("\tScale: (%f, %f, %f)\n", iqm_joints[i].scale[0], iqm_joints[i].scale[1], iqm_joints[i].scale[2]);
     }
     // --------------------------------------------------
     // --------------------------------------------------
