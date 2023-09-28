@@ -676,6 +676,12 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // --------------------------------------------------
     // Parse all frames (poses)
     // --------------------------------------------------
+
+    skel_model->n_frames = iqm_header->n_frames;
+    skel_model->frames_bone_pos = (vec3_t *) malloc(sizeof(vec3_t) * skel_model->n_bones * skel_model->n_frames);
+    skel_model->frames_bone_rot = (quat_t *) malloc(sizeof(quat_t) * skel_model->n_bones * skel_model->n_frames);
+    skel_model->frames_bone_scale = (vec3_t *) malloc(sizeof(vec3_t) * skel_model->n_bones * skel_model->n_frames);
+
     const uint16_t *frames_data = (const uint16_t*)(iqm_data + iqm_header->ofs_frames);
     const iqm_pose_quaternion_t *iqm_poses = (const iqm_pose_quaternion_t*) (iqm_data + iqm_header->ofs_poses);
 
@@ -691,23 +697,22 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
                     pose_data[k] += frames_data[i*iqm_header->n_poses + j] * iqm_poses[j].channel_scale[k];
                 }
             }
-            float pos_x = pose_data[0];
-            float pos_y = pose_data[1];
-            float pos_z = pose_data[2];
-            float quat_x = pose_data[3];
-            float quat_y = pose_data[4];
-            float quat_z = pose_data[5];
-            float quat_w = pose_data[6];
-            float scale_x = pose_data[7];
-            float scale_y = pose_data[8];
-            float scale_z = pose_data[9];
+            int frame_bone_idx = i * skel_model->n_bones + j;
+            skel_model->frames_bone_pos[frame_bone_idx].pos[0] = pose_data[0];
+            skel_model->frames_bone_pos[frame_bone_idx].pos[1] = pose_data[1];
+            skel_model->frames_bone_pos[frame_bone_idx].pos[2] = pose_data[2];
+            skel_model->frames_bone_rot[frame_bone_idx].x = pose_data[3];
+            skel_model->frames_bone_rot[frame_bone_idx].y = pose_data[4];
+            skel_model->frames_bone_rot[frame_bone_idx].z = pose_data[5];
+            skel_model->frames_bone_rot[frame_bone_idx].w = pose_data[6];
+            skel_model->frames_bone_scale[frame_bone_idx].pos[0] = pose_data[7];
+            skel_model->frames_bone_scale[frame_bone_idx].pos[1] = pose_data[8];
+            skel_model->frames_bone_scale[frame_bone_idx].pos[2] = pose_data[9];
 
-            log_printf("Frame: %d, Pose: %d \n", i, j);
-            log_printf("\tPos: (%f, %f, %f)\n", pos_x, pos_y, pos_z);
-            log_printf("\tRot: (%f, %f, %f, %f)\n", quat_x, quat_y, quat_z, quat_w);
-            log_printf("\tScale: (%f, %f, %f)\n", scale_x, scale_y, scale_z);
-
-            // TODO - Store these values?
+            // log_printf("Frame: %d, Pose: %d \n", i, j);
+            // log_printf("\tPos: (%f, %f, %f)\n", pos_x, pos_y, pos_z);
+            // log_printf("\tRot: (%f, %f, %f, %f)\n", quat_x, quat_y, quat_z, quat_w);
+            // log_printf("\tScale: (%f, %f, %f)\n", scale_x, scale_y, scale_z);
             // TODO - Compute matrix from these values?
         }
 
