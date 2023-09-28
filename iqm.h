@@ -9,12 +9,12 @@
 
 
 typedef struct vec3_s {
-    float pos[3];
+    float x,y,z;
 } vec3_t;
 
 
 typedef struct vec2_s {
-    float pos[2];
+    float x,y;
 } vec2_t;
 
 typedef struct quat_s {
@@ -655,16 +655,16 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
         skel_model->bone_names[i] = (char*) malloc(sizeof(char) * (strlen(joint_name) + 1));
         strcpy(skel_model->bone_names[i], joint_name);
         skel_model->bone_parent_idx[i] = iqm_joints[i].parent_joint_idx;
-        skel_model->bone_rest_pos[i].pos[0] = iqm_joints[i].translate[0];
-        skel_model->bone_rest_pos[i].pos[1] = iqm_joints[i].translate[1];
-        skel_model->bone_rest_pos[i].pos[2] = iqm_joints[i].translate[2];
+        skel_model->bone_rest_pos[i].x = iqm_joints[i].translate[0];
+        skel_model->bone_rest_pos[i].y = iqm_joints[i].translate[1];
+        skel_model->bone_rest_pos[i].z = iqm_joints[i].translate[2];
         skel_model->bone_rest_rot[i].x = iqm_joints[i].rotate[0];
         skel_model->bone_rest_rot[i].y = iqm_joints[i].rotate[1];
         skel_model->bone_rest_rot[i].z = iqm_joints[i].rotate[2];
         skel_model->bone_rest_rot[i].w = iqm_joints[i].rotate[3];
-        skel_model->bone_rest_scale[i].pos[0] = iqm_joints[i].scale[0];
-        skel_model->bone_rest_scale[i].pos[1] = iqm_joints[i].scale[1];
-        skel_model->bone_rest_scale[i].pos[2] = iqm_joints[i].scale[2];
+        skel_model->bone_rest_scale[i].x = iqm_joints[i].scale[0];
+        skel_model->bone_rest_scale[i].y = iqm_joints[i].scale[1];
+        skel_model->bone_rest_scale[i].z = iqm_joints[i].scale[2];
 
         // log_printf("Joint[%d]: \"%s\"\n", i, joint_name);
         // log_printf("\tParent bone: %d\n", iqm_joints[i].parent_joint_idx);
@@ -698,16 +698,16 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
                 }
             }
             int frame_bone_idx = i * skel_model->n_bones + j;
-            skel_model->frames_bone_pos[frame_bone_idx].pos[0] = pose_data[0];
-            skel_model->frames_bone_pos[frame_bone_idx].pos[1] = pose_data[1];
-            skel_model->frames_bone_pos[frame_bone_idx].pos[2] = pose_data[2];
+            skel_model->frames_bone_pos[frame_bone_idx].x = pose_data[0];
+            skel_model->frames_bone_pos[frame_bone_idx].y = pose_data[1];
+            skel_model->frames_bone_pos[frame_bone_idx].z = pose_data[2];
             skel_model->frames_bone_rot[frame_bone_idx].x = pose_data[3];
             skel_model->frames_bone_rot[frame_bone_idx].y = pose_data[4];
             skel_model->frames_bone_rot[frame_bone_idx].z = pose_data[5];
             skel_model->frames_bone_rot[frame_bone_idx].w = pose_data[6];
-            skel_model->frames_bone_scale[frame_bone_idx].pos[0] = pose_data[7];
-            skel_model->frames_bone_scale[frame_bone_idx].pos[1] = pose_data[8];
-            skel_model->frames_bone_scale[frame_bone_idx].pos[2] = pose_data[9];
+            skel_model->frames_bone_scale[frame_bone_idx].x = pose_data[7];
+            skel_model->frames_bone_scale[frame_bone_idx].y = pose_data[8];
+            skel_model->frames_bone_scale[frame_bone_idx].z = pose_data[9];
 
             // log_printf("Frame: %d, Pose: %d \n", i, j);
             // log_printf("\tPos: (%f, %f, %f)\n", pos_x, pos_y, pos_z);

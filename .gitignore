@@ -2,3 +2,4 @@ EBOOT.PBP
 PARAM.SFO
 *.o
 *.elf
+*.DS_Store
