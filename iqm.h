@@ -226,7 +226,7 @@ typedef struct skeletal_model_s {
 
     // List of bones
     uint32_t n_bones;
-    char **bone_names;
+    char **bone_name;
     uint16_t *bone_parent_idx;
 
     vec3_t *bone_rest_pos;
@@ -244,15 +244,16 @@ typedef struct skeletal_model_s {
 
     // Animation framegroup data
     uint16_t n_framegroups;
-    uint16_t *framegroup_start_frame;
-    uint16_t *framegroup_n_frames;
+    char **framegroup_name;
+    uint32_t *framegroup_start_frame;
+    uint32_t *framegroup_n_frames;
     float *framegroup_fps;
     bool *framegroup_loop;
 
 
     // Animation framegroup FTE events data
     uint16_t *framegroup_n_events;
-    uint16_t **framegroup_event_code;
+    uint32_t **framegroup_event_code;
     char **framegroup_event_data_str;
     float **framegroup_event_data_time;
 
@@ -643,7 +644,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // --------------------------------------------------
     log_printf("Parsing joints...\n");
     skel_model->n_bones = iqm_header->n_joints;
-    skel_model->bone_names = (char**) malloc(sizeof(char*) * skel_model->n_bones);
+    skel_model->bone_name = (char**) malloc(sizeof(char*) * skel_model->n_bones);
     skel_model->bone_parent_idx = (uint16_t*) malloc(sizeof(uint16_t) * skel_model->n_bones);
     skel_model->bone_rest_pos = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_bones);
     skel_model->bone_rest_rot = (quat_t*) malloc(sizeof(quat_t) * skel_model->n_bones);
@@ -652,8 +653,8 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     const iqm_joint_quaternion_t *iqm_joints = (const iqm_joint_quaternion_t*) (iqm_data + iqm_header->ofs_joints);
     for(uint32_t i = 0; i < iqm_header->n_joints; i++) {
         const char *joint_name = (const char*) ((iqm_data + iqm_header->ofs_text) + iqm_joints[i].name);
-        skel_model->bone_names[i] = (char*) malloc(sizeof(char) * (strlen(joint_name) + 1));
-        strcpy(skel_model->bone_names[i], joint_name);
+        skel_model->bone_name[i] = (char*) malloc(sizeof(char) * (strlen(joint_name) + 1));
+        strcpy(skel_model->bone_name[i], joint_name);
         skel_model->bone_parent_idx[i] = iqm_joints[i].parent_joint_idx;
         skel_model->bone_rest_pos[i].x = iqm_joints[i].translate[0];
         skel_model->bone_rest_pos[i].y = iqm_joints[i].translate[1];
@@ -722,16 +723,24 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // --------------------------------------------------
     // Parse animations (framegroups)
     // --------------------------------------------------
+
+    skel_model->n_framegroups = iqm_header->n_anims;
+    skel_model->framegroup_name = (char**) malloc(sizeof(char*) * skel_model->n_framegroups);
+    skel_model->framegroup_start_frame = (uint32_t*) malloc(sizeof(uint32_t) * skel_model->n_framegroups);
+    skel_model->framegroup_n_frames = (uint32_t*) malloc(sizeof(uint32_t) * skel_model->n_framegroups);
+    skel_model->framegroup_fps = (float*) malloc(sizeof(float) * skel_model->n_framegroups);
+    skel_model->framegroup_loop = (bool*) malloc(sizeof(bool) * skel_model->n_framegroups);
+
     if(iqm_header->n_anims > 0) {
         const iqm_anim_t *iqm_framegroups = (const iqm_anim_t*)(iqm_data + iqm_header->ofs_anims);
         for(uint32_t i = 0; i < iqm_header->n_anims; i++) {
             const char* framegroup_name = (const char*) (iqm_data + iqm_header->ofs_text + iqm_framegroups[i].name);
-            log_printf("Framegroup: %d, \"%s\"\n", i, framegroup_name);
-            log_printf("\tStart Frame: %d\n", iqm_framegroups[i].first_frame);
-            log_printf("\tFrames: %d\n", iqm_framegroups[i].n_frames);
-            log_printf("\tFramerate: %f\n", iqm_framegroups[i].framerate);
-            log_printf("\tFlags: %d\n", iqm_framegroups[i].flags);
-            log_printf("\t\tLoop?: %d\n", iqm_framegroups[i].flags & (uint32_t) iqm_anim_flag::IQM_ANIM_FLAG_LOOP);
+            skel_model->framegroup_name[i] = (char*) malloc(sizeof(char) * (strlen(framegroup_name) + 1));
+            strcpy(skel_model->framegroup_name[i], framegroup_name);
+            skel_model->framegroup_start_frame[i] = iqm_framegroups[i].first_frame;
+            skel_model->framegroup_n_frames[i] = iqm_framegroups[i].n_frames;
+            skel_model->framegroup_fps[i] = iqm_framegroups[i].framerate;
+            skel_model->framegroup_loop[i] = iqm_framegroups[i].flags & (uint32_t) iqm_anim_flag::IQM_ANIM_FLAG_LOOP;
 
         }
     }
