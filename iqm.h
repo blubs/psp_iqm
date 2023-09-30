@@ -1,3 +1,4 @@
+#include <math.h>
 #include "logging.h"
 // #include "math.hpp"
 
@@ -217,6 +218,11 @@ typedef struct skeletal_model_s {
     vertex_t *verts = nullptr;
     float *vert_bone_weights; // 4 bone weights per vertex
     uint8_t *vert_bone_idxs; // 4 bone indices per vertex
+
+
+    // Model mins / maxs across all animation frames
+    vec3_t mins;
+    vec3_t maxs;
 
 
     // List of meshes
@@ -574,7 +580,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     skel_model->verts = (vertex_t*) malloc(sizeof(vertex_t) * skel_model->n_verts);
     skel_model->vert_rest_positions = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_verts);
     skel_model->n_meshes = iqm_header->n_meshes;
-    skel_model->meshes = (skeletal_mesh_t*) malloc(sizeof(skeletal_mesh_t*) * skel_model->n_meshes);
+    skel_model->meshes = (skeletal_mesh_t*) malloc(sizeof(skeletal_mesh_t) * skel_model->n_meshes);
 
     vec2_t *verts_uv = (vec2_t*) malloc(sizeof(vec2_t) * skel_model->n_verts);
 
@@ -598,11 +604,13 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
 
     // Populate verts array:
     for(uint32_t i = 0; i < skel_model->n_verts; i++) {
-        skel_model->verts[i].x = verts_pos[i].pos[0]; 
-        skel_model->verts[i].y = verts_pos[i].pos[1];
-        skel_model->verts[i].z = verts_pos[i].pos[2];
-        skel_model->verts[i].u = verts_uv[i].pos[0];
-        skel_model->verts[i].v = verts_uv[i].pos[1];
+        // NOTE: Initialize the vertex positions to the rest position.
+        // NOTE: The vertex xyz coords will be updated whenever we apply a new skeletal pose to this model.
+        skel_model->verts[i].x = skel_model->vert_rest_positions[i].x; 
+        skel_model->verts[i].y = skel_model->vert_rest_positions[i].y;
+        skel_model->verts[i].z = skel_model->vert_rest_positions[i].z;
+        skel_model->verts[i].u = verts_uv[i].x;
+        skel_model->verts[i].v = verts_uv[i].y;
         // skel_model->verts[i].color = 0xffffffff;
         skel_model->verts[i].color = 0x00000000;
         // TODO - Parse other potentially optional vertex attribute arrays
@@ -619,15 +627,15 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
 
 
         uint32_t first_vert = iqm_meshes[i].first_vert_idx;
-        uint32_t n_verts = iqm_meshes[i].n_verts;
         uint32_t first_tri = iqm_meshes[i].first_tri;
-        uint32_t n_tris = iqm_meshes[i].n_tris;
-        skel_model->meshes[i].n_tri_verts = n_tris * 3;
-        skel_model->meshes[i].tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * n_tris * 3);
         skel_model->meshes[i].first_vert = first_vert;
+        skel_model->meshes[i].n_verts = iqm_meshes[i].n_verts;
+        skel_model->meshes[i].n_tris = iqm_meshes[i].n_tris;
+        skel_model->meshes[i].n_tri_verts = skel_model->meshes[i].n_tris * 3;
+        skel_model->meshes[i].tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * skel_model->meshes[i].n_tri_verts);
 
 
-        for(uint32_t j = 0; j < n_tris; j++) {
+        for(uint32_t j = 0; j < skel_model->meshes[i].n_tris; j++) {
             uint16_t vert_a = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[0] - first_vert;
             uint16_t vert_b = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[1] - first_vert;
             uint16_t vert_c = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[2] - first_vert;
@@ -635,8 +643,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             skel_model->meshes[i].tri_verts[j*3 + 1] = vert_b;
             skel_model->meshes[i].tri_verts[j*3 + 2] = vert_c;
         }
-        skel_model->meshes[i].n_verts = n_verts;
-        skel_model->meshes[i].n_tris = n_tris;
     }
 
     // --------------------------------------------------
@@ -716,7 +722,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             // log_printf("\tScale: (%f, %f, %f)\n", scale_x, scale_y, scale_z);
             // TODO - Compute matrix from these values?
         }
-
     }
     // --------------------------------------------------
 
@@ -754,6 +759,12 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     if(iqm_header->ofs_bounds != 0) {
         // TODO - Compute overall model mins / maxes by finding the most extreme points for all frames:
         for(uint16_t i = 0; i < iqm_header->n_frames; i++) {
+            skel_model->mins.x = fmin(skel_model->mins.x, iqm_frame_bounds[i].mins[0]);
+            skel_model->mins.y = fmin(skel_model->mins.y, iqm_frame_bounds[i].mins[1]);
+            skel_model->mins.z = fmin(skel_model->mins.z, iqm_frame_bounds[i].mins[2]);
+            skel_model->maxs.x = fmax(skel_model->maxs.x, iqm_frame_bounds[i].maxs[0]);
+            skel_model->maxs.y = fmax(skel_model->maxs.y, iqm_frame_bounds[i].maxs[1]);
+            skel_model->maxs.z = fmax(skel_model->maxs.z, iqm_frame_bounds[i].maxs[2]);
             // vec3_t frame_mins;
             // frame_mins.pos[0] = iqm_frame_bounds[i].mins[0];
             // frame_mins.pos[1] = iqm_frame_bounds[i].mins[1];
@@ -762,10 +773,10 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             // frame_maxs.pos[0] = iqm_frame_bounds[i].maxs[0];
             // frame_maxs.pos[1] = iqm_frame_bounds[i].maxs[1];
             // frame_maxs.pos[2] = iqm_frame_bounds[i].maxs[2];
-            log_printf("Frame [%d] bounds: (%f,%f,%f) (%f,%f,%f)\n", i, 
-                iqm_frame_bounds[i].mins[0], iqm_frame_bounds[i].mins[1], iqm_frame_bounds[i].mins[2],
-                iqm_frame_bounds[i].maxs[0],iqm_frame_bounds[i].maxs[1], iqm_frame_bounds[i].maxs[2]
-            );
+            // log_printf("Frame [%d] bounds: (%f,%f,%f) (%f,%f,%f)\n", i, 
+            //     iqm_frame_bounds[i].mins[0], iqm_frame_bounds[i].mins[1], iqm_frame_bounds[i].mins[2],
+            //     iqm_frame_bounds[i].maxs[0],iqm_frame_bounds[i].maxs[1], iqm_frame_bounds[i].maxs[2]
+            // );
         }
     }
     // --------------------------------------------------
