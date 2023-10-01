@@ -259,9 +259,9 @@ typedef struct skeletal_model_s {
 
     // Animation framegroup FTE events data
     uint16_t *framegroup_n_events;
+    float **framegroup_event_time;
     uint32_t **framegroup_event_code;
-    char **framegroup_event_data_str;
-    float **framegroup_event_data_time;
+    char ***framegroup_event_data_str;
 
 
     // TODO - Bone data (parent indices, rest pose trans/rot/scale, rest pose matrices, inverse rest pose matrices)
@@ -765,18 +765,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             skel_model->maxs.x = fmax(skel_model->maxs.x, iqm_frame_bounds[i].maxs[0]);
             skel_model->maxs.y = fmax(skel_model->maxs.y, iqm_frame_bounds[i].maxs[1]);
             skel_model->maxs.z = fmax(skel_model->maxs.z, iqm_frame_bounds[i].maxs[2]);
-            // vec3_t frame_mins;
-            // frame_mins.pos[0] = iqm_frame_bounds[i].mins[0];
-            // frame_mins.pos[1] = iqm_frame_bounds[i].mins[1];
-            // frame_mins.pos[2] = iqm_frame_bounds[i].mins[2];
-            // vec3_t frame_maxs;
-            // frame_maxs.pos[0] = iqm_frame_bounds[i].maxs[0];
-            // frame_maxs.pos[1] = iqm_frame_bounds[i].maxs[1];
-            // frame_maxs.pos[2] = iqm_frame_bounds[i].maxs[2];
-            // log_printf("Frame [%d] bounds: (%f,%f,%f) (%f,%f,%f)\n", i, 
-            //     iqm_frame_bounds[i].mins[0], iqm_frame_bounds[i].mins[1], iqm_frame_bounds[i].mins[2],
-            //     iqm_frame_bounds[i].maxs[0],iqm_frame_bounds[i].maxs[1], iqm_frame_bounds[i].maxs[2]
-            // );
         }
     }
     // --------------------------------------------------
@@ -813,20 +801,102 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     log_printf("FTE event struct %d\n", sizeof(iqm_ext_fte_event_t));
 
     if(iqm_fte_ext_events != nullptr) {
-
-        // TODO - Linked list...
+        // Count the number of events for each framegroup:
+        skel_model->framegroup_n_events = (uint16_t*) malloc(sizeof(uint16_t) * skel_model->n_framegroups);
+        for(uint16_t i = 0; i < skel_model->n_framegroups; i++) {
+            skel_model->framegroup_n_events[i] = 0;
+        }
         for(uint16_t i = 0; i < iqm_fte_ext_event_n_events; i++) {
-            log_printf("IQM FTE Extension \"FTE_EVENT \" event %d\n", i);
-            log_printf("\tanim: %d\n", iqm_fte_ext_events[i].anim);
-            log_printf("\ttimestamp: %f\n", iqm_fte_ext_events[i].timestamp);
-            log_printf("\tevent_code: %d\n", iqm_fte_ext_events[i].event_code);
-            log_printf("\tevent_data_str idx: %d\n", iqm_fte_ext_events[i].event_data_str);
-            // TODO - if(iqm_fte_ext_events[i].event_data_str == 0)
-            // TODO   then this event has no data.
-            // TODO   Parsing it is okay tho', as it'll return an empty string.
-            // TODO   Will need to decide how we should handle the no-data event case.
-            const char* event_data = (const char*) (iqm_data + iqm_header->ofs_text + iqm_fte_ext_events[i].event_data_str);
-            log_printf("\tevent_data_str: \"%s\"\n", event_data);
+            int framegroup_idx = iqm_fte_ext_events[i].anim;
+            skel_model->framegroup_n_events[framegroup_idx]++;
+        }
+
+        // Allocate memory for all framegroup arrays
+        skel_model->framegroup_event_time = (float**) malloc(sizeof(float*) * skel_model->n_framegroups);
+        skel_model->framegroup_event_data_str = (char***) malloc(sizeof(char**) * skel_model->n_framegroups);
+        skel_model->framegroup_event_code = (uint32_t**) malloc(sizeof(uint32_t*) * skel_model->n_framegroups);
+
+        // Allocate enough memory in each framegroup array to hold events in a list:
+        for(uint16_t i = 0; i < skel_model->n_framegroups; i++) {
+            if(skel_model->framegroup_n_events[i] == 0) {
+                skel_model->framegroup_event_time[i] = nullptr;
+                skel_model->framegroup_event_data_str[i] = nullptr;
+                skel_model->framegroup_event_code[i] = nullptr;
+            }
+            else {
+                skel_model->framegroup_event_time[i] = (float*) malloc(sizeof(float) * skel_model->framegroup_n_events[i]);
+                skel_model->framegroup_event_data_str[i] = (char**) malloc(sizeof(char*) * skel_model->framegroup_n_events[i]);
+                skel_model->framegroup_event_code[i] = (uint32_t*) malloc(sizeof(uint32_t) * skel_model->framegroup_n_events[i]);
+                // Set each char array pointer to nullptr, we'll use this to identify empty indices
+                for(int j = 0; j < skel_model->framegroup_n_events[i]; j++) {
+                    skel_model->framegroup_event_data_str[i][j] = nullptr;
+                }
+            }
+        }
+
+        for(uint16_t i = 0; i < iqm_fte_ext_event_n_events; i++) {
+            const char *iqm_event_data_str = (const char*) (iqm_data + iqm_header->ofs_text + iqm_fte_ext_events[i].event_data_str);
+
+            int event_framegroup_idx = iqm_fte_ext_events[i].anim;
+            float event_time = iqm_fte_ext_events[i].timestamp;
+            uint32_t event_code = iqm_fte_ext_events[i].event_code;
+            // Allocate data for this string and copy the char array
+            char *event_data_str = (char*) malloc(sizeof(char) * (strlen(iqm_event_data_str) + 1));
+            strcpy(event_data_str, iqm_event_data_str);
+
+            // If invalid framegroup idx, skip the event
+            if(event_framegroup_idx < 0 || event_framegroup_idx >= skel_model->n_framegroups) {
+                log_printf("WARNING: Unable to load IQM event. Framegroup idx %d invalid for a model with %d framegroups.\n", event_framegroup_idx, skel_model->n_framegroups);
+                continue;
+            }
+
+            // Find the correct index to insert the event into in this framegroup's event list
+            int event_idx = 0;
+            for(; event_idx < skel_model->framegroup_n_events[event_framegroup_idx]; event_idx++) {
+                // If this index is empty, insert here
+                if(skel_model->framegroup_event_data_str[event_framegroup_idx][event_idx] == nullptr) {
+                    break;
+                }
+                // If the event at this index has an event time > the current event, insert here
+                else if(skel_model->framegroup_event_time[event_framegroup_idx][event_idx] > event_time) {
+                    break;
+                }
+            }
+            // log_printf("Event %d inserting at framegroup %d index %d\n", i, event_framegroup_idx, event_idx);
+
+            // If event_idx exceeds the length of the array, warn and skip (This should never happen)
+            if(event_idx >= skel_model->framegroup_n_events[event_framegroup_idx]) {
+                log_printf("WARNING: Unable to load IQM event for time %f for framegroup %d.\n", i, event_framegroup_idx);
+                continue;
+            }
+
+            // Shift up the events in the array.
+            // Starting from the end of the array, move up all events after the insertion `event_idx`
+            for(int j = skel_model->framegroup_n_events[event_framegroup_idx] - 2; j >= event_idx; j--) {
+                if(skel_model->framegroup_event_data_str[event_framegroup_idx][j] == nullptr) {
+                    continue;
+                }
+                // log_printf("\tframegroup %d moving event at idx %d to idx %d\n", event_framegroup_idx, j, j+1);
+                skel_model->framegroup_event_time[event_framegroup_idx][j+1] = skel_model->framegroup_event_time[event_framegroup_idx][j];
+                skel_model->framegroup_event_data_str[event_framegroup_idx][j+1] = skel_model->framegroup_event_data_str[event_framegroup_idx][j];
+                skel_model->framegroup_event_code[event_framegroup_idx][j+1] = skel_model->framegroup_event_code[event_framegroup_idx][j];
+            }
+
+            // Insert the new event at the chosen index:
+            skel_model->framegroup_event_time[event_framegroup_idx][event_idx] = event_time;
+            skel_model->framegroup_event_data_str[event_framegroup_idx][event_idx] = event_data_str;
+            skel_model->framegroup_event_code[event_framegroup_idx][event_idx] = event_code;
+        }
+    }
+
+
+    // Print the parsed events:
+    for(int i = 0; i < skel_model->n_framegroups; i++) {
+        for(int j = 0; j < skel_model->framegroup_n_events[i]; j++) {
+            log_printf("\"FTE_EVENT \" framegroup: %d, event: %d, time: %f, code: %d, data: \"%s\"\n", i, j, 
+                skel_model->framegroup_event_time[i][j],
+                skel_model->framegroup_event_code[i][j],
+                skel_model->framegroup_event_data_str[i][j]);
         }
     }
     // --------------------------------------------------
