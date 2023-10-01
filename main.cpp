@@ -154,6 +154,8 @@ int main(int argc, char *argv[]) {
     // iqm_header_t *iqm_header = load_iqm_file("assets/zombie_with_anims.iqm");
 
     skeletal_model_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
+    skeletal_skeleton_t *iqm_skeleton = create_skeleton(iqm_model);
+    int framegroup_idx = 0;
 
 
     load_png_file("assets/zombie_tex_0.png", zombie_tex);
@@ -164,6 +166,8 @@ int main(int argc, char *argv[]) {
     void *cur_draw_buffer = draw_buffer;
     fclose(f);
     unsigned int frame = 0;
+    float frametime = 0;
+
     while(running()) {
         sceGuStart(GU_DIRECT, display_list);
         // Smoothly fade between 0 and 1:
@@ -216,6 +220,17 @@ int main(int argc, char *argv[]) {
         sceGuAmbientColor(0xffffffff);
 
 
+        // --------------------------------------------------------------------
+        // Updating the model's animation / drawing state
+        // --------------------------------------------------------------------
+        frametime = (frame / 60.0f); // 60 FPS animation
+        // Set the skeleton's current pose matrices from animation data
+        build_skeleton( iqm_skeleton, iqm_model, framegroup_idx, frametime);
+        // Process FTE animation events elapsed between the last and current frame
+        // process_anim_events( iqm_model, framegroup_idx, prev_frametime, cur_frametime, event_callback);
+        // Transform the model vertices to model-space using the skeleton's current pose matrices
+        apply_skeleton_pose( iqm_skeleton, iqm_model);
+        // --------------------------------------------------------------------
 
 
         // for(unsigned int i = 0; i < iqm_model->n_submeshes; i++) {

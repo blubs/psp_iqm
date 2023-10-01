@@ -183,6 +183,27 @@ typedef struct iqm_ext_fte_skin_meshskin_s {
 
 
 
+// #define MAX_QPATH 64
+// typedef struct iqm_framegroup_s {
+//     uint32_t name;
+//     uint32_t first_frame;
+//     uint32_t n_frames;
+//     float framerate;
+//     uint32_t flags;
+// } iqm_framegroup_t;
+
+// typedef struct framegroup_s {
+//     uint32_t first_pose;
+//     uint32_t n_poses;
+//     float fps;
+//     char name[MAX_QPATH];
+// } framegroup_t;
+
+
+
+
+
+
 typedef struct vertex_s {
     float u, v;
     uint32_t color;
@@ -264,75 +285,145 @@ typedef struct skeletal_model_s {
     char ***framegroup_event_data_str;
 
 
-    // TODO - Bone data (parent indices, rest pose trans/rot/scale, rest pose matrices, inverse rest pose matrices)
+    // TODO - Bone data (rest pose matrices, inverse rest pose matrices)
     // -----------------------------------
 
-    // Skeletal_Model() {}
-    // ~Skeletal_Model() {};
-    //
-    // Creates a `Skeletal_Skeleton` object that uses this model's skeleton / animation skeleton pose information.
-    //
-    // Skeletal_Skeleton *create_skeleton() {
-    //     // TODO
-    // }
-
-
-    // 
-    // Processes an animation's elapsed framegroup events.
-    //
-    // void process_anim_events(int framegroup_idx, float start_frametime, float end_frametime) {
-    //     // TODO - Add event callback somehow to this function
-    // }
-
-    // 
-    // Applies a `Skeletal_Skeleton` object's current built pose to the model. 
-    // Populates each meshe's `cur_posed_vertices` with final model-space vertex locations.
-    // 
-    // void apply_skeleton_pose(const Skeletal_Skeleton *skeleton) {
-
-    //     // TODO - A Skeleton may have been built on top of a different model. 
-    //     // TODO   If built on same model, use bone indices directly
-    //     // TODO   If built on different model, need to somehow match up 
-    //     // TODO   this model's bones to the skeleton model's bones by bone name
-    //     // TODO - Will likely need to create some sort of lookup table for 
-    //     // TODO   translating bone indices from one model to the other.
-    //     // TODO - The core idea is that shared bones are used, all others ignored.
-
-
-
-    //     // TODO - Compute and cache 3x4 rest pose inverse...
-    //     // TODO - Does this need to be a 4x4? What shape does the inverse take?
-    //     // TODO - When do we need the parent'bone's inverse rest pose?
-    //     // Final pose =
-    //     //  weight_a * (bone_a * inv_rest_pose_a * vert)
-    //     //  + weight_b * (bone_b * inv_rest_pose_b * vert)
-    //     //  + weight_c * (bone_c * inv_rest_pose_c * vert)
-    //     // 
-    // }
 } skeletal_model_t;
 
 
 
 typedef struct skeletal_skeleton_s {
     const skeletal_model_t *model; // Animation / skeleton data is pulled from this model
-
-    // TODO - Structs to hold current built skeleton pose
-    // void build(int framegroup_idx, float frametime) {
-    //     // TODO - Populate current pose matrices
-    // }
+    // TODO - Fields for the current interpolated skeletal bone pose matrices
 } skeletal_skeleton_t;
 
 
 
+//
+// Creates a `Skeletal_Skeleton` object that uses this model's skeleton / animation skeleton pose information.
+//
+skeletal_skeleton_t *create_skeleton(skeletal_model_t *model) {
+    skeletal_skeleton_t *skeleton = (skeletal_skeleton_t*) malloc(sizeof(skeletal_skeleton_t));
+    skeleton->model = model;
+    // TODO - allocate memory for other fields in the skeleton to store bone current pose matrices
+    return skeleton;
+}
+
+
+// 
+// Processes an animation's elapsed framegroup events.
+//
+void process_anim_events(skeletal_model_t *model, int framegroup_idx, float start_frametime, float end_frametime) {
+    // TODO - Loop through the list of events (already sorted by frametime) and execute the callback for each event within the window.
+    // TODO - Decide if the window domain should be closed on either side.
+    // TODO - Add event callback somehow to this function
+}
+
+// 
+// Applies a `skeeltal_skeleton_t` object's current built pose to the model. 
+// Populates the mesh's `verts` array with the final model-space vertex locations.
+// 
+void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model) {
+
+    // TODO - I should error out if the skeleton's model is not `model`
+    // TODO   Should I just get rid of 
+
+    // TODO - Should a model be stateful? Or should it be a shared reused asset across all instances?
+    // Depends, in dquake, where are the interpolated vertices stored? Are they stored in the model?
+    // If the vertices are not stored in the model, I'd need another struct to hold them... Skip for now.
+
+
+    // TODO - A Skeleton may have been built on top of a different model. 
+    // TODO   If built on same model, use bone indices directly
+    // TODO   If built on different model, need to somehow match up 
+    // TODO   this model's bones to the skeleton model's bones by bone name
+    // TODO - Will likely need to create some sort of lookup table for 
+    // TODO   translating bone indices from one model to the other.
+    // TODO - The core idea is that shared bones are used, all others ignored.
+
+
+    // TODO - Transform the normals and set them as well.
+
+
+    // TODO - Compute and cache 3x4 rest pose inverse...
+    // TODO - Does this need to be a 4x4? What shape does the inverse take?
+    // TODO - When do we need the parent'bone's inverse rest pose?
+    // Final pose =
+    //  weight_a * (bone_a * inv_rest_pose_a * vert)
+    //  + weight_b * (bone_b * inv_rest_pose_b * vert)
+    //  + weight_c * (bone_c * inv_rest_pose_c * vert)
+    // 
+}
+
+
+
+//
+// Sets a skeleton's current pose matrices using the animation data from `source_model`
+//
+void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_model, int framegroup_idx, float frametime) {
+    // TODO - Populate current pose matrices
+    // TODO - Populate the inverse 3x3 pose matrices for the normals as well.
+
+
+    // TODO - If `source_model` is not the skeleton's model, need to handle bone references by name.
+    // ... So the steps are:
+    // 1. Compute the model-space transforms for all bones using data from `source_model`
+    // 2. Map the transforms to the skeleton's bones by: 
+    //      name (if `source_model` is not the skeleton's original model)
+    //      index (if `source_model` is the skeleton's original model)
+}
 
 
 
 
-// Call sequence looks like this:
+
+//
+// Call sequence for internal animations looks like this:
+//
+// skeletal_model_t *zombie_model = load_iqm("something.iqm");
+// skeletal_skeleton_t *zombie_skeleton = create_skeleton(zombie_model); // Skeleton is built from the model struct
+// build_skeleton( zombie_skeleton, zombie_model, framegroup_idx, frametime);
+// process_anim_events(zombie_anim_walk1, framegroup_idx, prev_frametime, cur_frametime, event_callback);
+// apply_skeleton_pose(zombie_skeleton, zombie_model);
+
+//
+// Call sequence for external animations looks like this:
+//
+// skeletal_model_t *zombie_model = load_iqm("something.iqm");
+// skeletal_model_t *zombie_anim_walk1 = load_iqm("something_else.iqm");
+// skeletal_skeleton_t *zombie_skeleton = create_skeleton(zombie_model); // Skeleton is built from the model struct
+// build_skeleton( zombie_skeleton, zombie_anim_walk1, framegroup_idx, frametime);
+// process_anim_events(zombie_anim_walk1, framegroup_idx, prev_frametime, cur_frametime, event_callback);
+// apply_skeleton_pose(zombie_skeleton, zombie_model);
+
+
+
+// skeletons are built
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Temp container:
+// typedef struct model_s {
+//     uint32_t n_verts;
+//     vertex_t *verts;
+//     uint32_t n_meshes;
+//     mesh_t *meshes;
+// } model_t;
 
 
 
@@ -510,16 +601,18 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // TODO - Let's get quick-n-dirty to load up the vertices
 
     if(memcmp(iqm_header->magic, IQM_MAGIC, sizeof(iqm_header->magic))) {
-        // FIXME
+        free(iqm_data);
         return NULL; 
     }
 
     if(iqm_header->version != IQM_VERSION_2) {
         // TODO - also allow version1?
+        free(iqm_data);
         return NULL;
     }
 
     if(iqm_header->filesize != file_len) {
+        free(iqm_data);
         return NULL;
     }
 
@@ -535,11 +628,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
 
     const iqm_vert_array_t *vert_arrays = (const iqm_vert_array_t*)(iqm_data + iqm_header->ofs_vert_arrays);
     for(unsigned int i = 0; i < iqm_header->n_vert_arrays; i++) {
-        // unsigned int vert_array_type = vert_arrays[i]->type;
-        // unsigned int vert_array_format = vert_arrays[i]->format;
-        // unsigned int vert_array_size = vert_arrays[i]->size;
-        // unsigned int vert_array_type = vert_arrays[i]->ofs;
-
         if((iqm_vert_array_type) vert_arrays[i].type == iqm_vert_array_type::IQM_VERT_POS) {
             iqm_verts_pos = &vert_arrays[i];
         }
@@ -623,7 +711,10 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
 
     for(uint32_t i = 0; i < iqm_header->n_meshes; i++) {
         const char *material_name = (const char*) ((iqm_data + iqm_header->ofs_text) + iqm_meshes[i].material);
-        log_printf("Mesh[%d]: \"%s\"\n", i, material_name);
+        // log_printf("Mesh[%d]: \"%s\"\n", i, material_name);
+        // log_printf("\tfirst vertex: %d\n", iqm_meshes[i].first_vert_idx);
+        // log_printf("\tn verts: %d\n", iqm_meshes[i].n_verts);
+        // log_printf("\tn tris: %d\n", iqm_meshes[i].n_tris);
 
 
         uint32_t first_vert = iqm_meshes[i].first_vert_idx;
@@ -747,6 +838,12 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             skel_model->framegroup_fps[i] = iqm_framegroups[i].framerate;
             skel_model->framegroup_loop[i] = iqm_framegroups[i].flags & (uint32_t) iqm_anim_flag::IQM_ANIM_FLAG_LOOP;
 
+            // log_printf("Framegroup: %d, \"%s\"\n", i, framegroup_name);
+            // log_printf("\tStart Frame: %d\n", iqm_framegroups[i].first_frame);
+            // log_printf("\tFrames: %d\n", iqm_framegroups[i].n_frames);
+            // log_printf("\tFramerate: %f\n", iqm_framegroups[i].framerate);
+            // log_printf("\tFlags: %d\n", iqm_framegroups[i].flags);
+            // log_printf("\t\tLoop?: %d\n", iqm_framegroups[i].flags & (uint32_t) iqm_anim_flag::IQM_ANIM_FLAG_LOOP);
         }
     }
     // --------------------------------------------------
@@ -886,17 +983,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             skel_model->framegroup_event_time[event_framegroup_idx][event_idx] = event_time;
             skel_model->framegroup_event_data_str[event_framegroup_idx][event_idx] = event_data_str;
             skel_model->framegroup_event_code[event_framegroup_idx][event_idx] = event_code;
-        }
-    }
-
-
-    // Print the parsed events:
-    for(int i = 0; i < skel_model->n_framegroups; i++) {
-        for(int j = 0; j < skel_model->framegroup_n_events[i]; j++) {
-            log_printf("\"FTE_EVENT \" framegroup: %d, event: %d, time: %f, code: %d, data: \"%s\"\n", i, j, 
-                skel_model->framegroup_event_time[i][j],
-                skel_model->framegroup_event_code[i][j],
-                skel_model->framegroup_event_data_str[i][j]);
         }
     }
     // --------------------------------------------------
