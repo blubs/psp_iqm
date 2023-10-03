@@ -24,6 +24,96 @@ typedef struct quat_s {
 } quat_t;
 
 
+float dot_vec3(vec3_t a, vec3_t b) {
+    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
+}
+
+
+float lerp_float(float a, float b, float lerpfrac) {
+    return a + lerpfrac * (b - a);
+}
+
+
+// 
+// Linear interpolation between two vectors
+//
+vec3_t lerp_vec3(vec3_t a, vec3_t b, float lerpfrac) {
+    vec3_t result;
+    result.x = lerp_float(a.x, b.x, lerpfrac);
+    result.y = lerp_float(a.y, b.y, lerpfrac);
+    result.z = lerp_float(a.z, b.z, lerpfrac);
+    return result;
+}
+
+
+// 
+// Linear interpolation between two quaternions
+//
+quat_t lerp_quat(const quat_t a, const quat_t b, float lerpfrac) {
+    // If the quaternions are the same, return either one
+    if(a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w) {
+        return a;
+    }
+    quat_t result;
+    result.x = lerp_float(a.x, b.x, lerpfrac);
+    result.y = lerp_float(a.y, b.y, lerpfrac);
+    result.z = lerp_float(a.z, b.z, lerpfrac);
+    result.w = lerp_float(a.w, b.w, lerpfrac);
+    return result;
+}
+
+
+// 
+// Spherical linear interpolation between two quaternions
+//
+quat_t slerp_quat(const quat_t a, const quat_t b, float lerpfrac) {
+    // If the quaternions are the same, return either one
+    if(a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w) {
+        return a;
+    }
+    quat_t result;
+    float dot_product = (a.x * b.x) + (a.y * b.y) + (a.z * b.z) + (a.w * b.w);
+    // Avoid div by zero
+    if(dot_product > 0.999f) {
+        // Revert to linear interpolation
+        return lerp_quat(a,b,lerpfrac);
+    }
+
+    // Interpolate the short way around
+    quat_t c;
+    if(dot_product < 0) {
+        dot_product = -dot_product;
+        c.x = -b.x;
+        c.y = -b.y;
+        c.z = -b.z;
+        c.w = -b.w;
+    }
+    else {
+        c.x = b.x;
+        c.y = b.y;
+        c.z = b.z;
+        c.w = b.w;
+    }
+
+    float theta = acosf(dot_product);
+    float c1 = sinf(theta * (1 - lerpfrac));
+    float c2 = sinf(theta * lerpfrac);
+    float c3 = 1.0 / sinf(theta);
+
+    result.x = (a.x * c1 + c.x * c2) * c3;
+    result.y = (a.y * c1 + c.y * c2) * c3;
+    result.z = (a.z * c1 + c.z * c2) * c3;
+    result.w = (a.w * c1 + c.w * c2) * c3;
+    // Normalize
+    float quat_nor = 1.0 / sqrtf((result.x * result.x) + (result.y * result.y) + (result.z * result.z) + (result.w * result.w));
+    result.x *= quat_nor;
+    result.y *= quat_nor;
+    result.z *= quat_nor;
+    result.w *= quat_nor;
+    return result;
+}
+
+
 
 typedef struct iqm_header_s {
     char magic[16];
@@ -181,29 +271,6 @@ typedef struct iqm_ext_fte_skin_meshskin_s {
 } iqm_ext_fte_skin_meshskin_t;
 
 
-
-
-// #define MAX_QPATH 64
-// typedef struct iqm_framegroup_s {
-//     uint32_t name;
-//     uint32_t first_frame;
-//     uint32_t n_frames;
-//     float framerate;
-//     uint32_t flags;
-// } iqm_framegroup_t;
-
-// typedef struct framegroup_s {
-//     uint32_t first_pose;
-//     uint32_t n_poses;
-//     float fps;
-//     char name[MAX_QPATH];
-// } framegroup_t;
-
-
-
-
-
-
 typedef struct vertex_s {
     float u, v;
     uint32_t color;
@@ -319,11 +386,101 @@ void process_anim_events(skeletal_model_t *model, int framegroup_idx, float star
     // TODO - Add event callback somehow to this function
 }
 
+//
+// Sets a skeleton's current pose matrices using the animation data from `source_model`
+//
+void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_model, int framegroup_idx, float frametime) {
+
+    if(skeleton->model != source_model) {
+        // FIXME - If this happens, need to build model pose data from model animation data
+        // FIXME - Then apply model pose to skeleton pose by bone name
+        return;
+    }
+
+    if(framegroup_idx < 0 || framegroup_idx >= source_model->n_framegroups) {
+        return;
+    }
+
+    // Find the two nearest frames to interpolate between
+    int frame1_idx = (int) floor(frametime * source_model->framegroup_fps[framegroup_idx]);
+    int frame2_idx = frame1_idx + 1;
+    // float delta_frametime = 1.0f / source_model->framegroup_fps[framegroup_idx];
+    // float lerpfrac = fmod(frametime, delta_frametime) / delta_frametime;
+
+    if(source_model->framegroup_loop[framegroup_idx]) {
+        frame1_idx = frame1_idx % source_model->framegroup_n_frames[framegroup_idx];
+        frame2_idx = frame2_idx % source_model->framegroup_n_frames[framegroup_idx];
+    }
+    else {
+        frame1_idx = std::min(std::max(0, frame1_idx), (int) source_model->framegroup_n_frames[framegroup_idx] - 1);
+        frame2_idx = std::min(std::max(0, frame2_idx), (int) source_model->framegroup_n_frames[framegroup_idx] - 1);
+    }
+
+    float lerpfrac;
+    if(frame1_idx == frame2_idx) {
+        lerpfrac = 0.0f;
+    }
+    else {
+        // FIXME - I suspect there's a simpler way to calculate this... that still relies on frame1_time
+        float delta_frametime = 1.0f / source_model->framegroup_fps[framegroup_idx];
+        float anim_duration = delta_frametime * source_model->framegroup_n_frames[framegroup_idx];
+        float frame1_time = frame1_idx * delta_frametime;
+        lerpfrac = (fmod(frametime,anim_duration) - frame1_time) / delta_frametime;
+        // Floating point math can make it go slightly out of bounds:
+        lerpfrac = std::min(std::max(0.0f, lerpfrac), 1.0f);
+    }
+    frame1_idx = source_model->framegroup_start_frame[framegroup_idx] + frame1_idx;
+    frame2_idx = source_model->framegroup_start_frame[framegroup_idx] + frame2_idx;
+    // TODO - If lerpfrac is 0.0 or 1.0, don't interpolate, just copy the bone poses
+
+    log_printf("build_skeleton. frametime: %f, (%d, %d, %f)\n", frametime, frame1_idx, frame2_idx, lerpfrac);
+
+
+    // TODO - Loop through bones, building up model-space bone transforms
+    // FIXME - Do we need to use the bone rest positions for anything? or do they just get replaced?
+
+    for(int i = 0; i < source_model->n_bones; i++) {
+        vec3_t frame1_pos = source_model->frames_bone_pos[source_model->n_bones * frame1_idx + i];
+        vec3_t frame2_pos = source_model->frames_bone_pos[source_model->n_bones * frame2_idx + i];
+        quat_t frame1_rot = source_model->frames_bone_rot[source_model->n_bones * frame1_idx + i];
+        quat_t frame2_rot = source_model->frames_bone_rot[source_model->n_bones * frame2_idx + i];
+        vec3_t frame1_scale = source_model->frames_bone_scale[source_model->n_bones * frame1_idx + i];
+        vec3_t frame2_scale = source_model->frames_bone_scale[source_model->n_bones * frame2_idx + i];
+
+        vec3_t bone_pos = lerp_vec3(frame1_pos, frame2_pos, lerpfrac);
+        quat_t bone_rot = slerp_quat(frame1_rot, frame2_rot, lerpfrac);
+        vec3_t bone_scale = lerp_vec3(frame1_scale, frame2_scale, lerpfrac);
+
+
+
+        // ------------–------------–------------–------------–------------–---
+        // Calculate the inverse rest pose transform for this bone:
+        // TODO - Calculate this once at load and stash it
+        // ------------–------------–------------–------------–------------–---
+        vec3_t bone_rest_pos = source_model->bone_rest_pos[i];
+        quat_t bone_rest_rot = source_model->bone_rest_rot[i];
+        vec3_t bone_rest_scale = source_model->bone_rest_scale[i];
+        // ------------–------------–------------–------------–------------–---
+
+
+
+
+    }
+
+
+
+}
+
 // 
 // Applies a `skeeltal_skeleton_t` object's current built pose to the model. 
 // Populates the mesh's `verts` array with the final model-space vertex locations.
 // 
 void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model) {
+
+    if(skeleton->model != model) {
+        // FIXME - Is this a valid condition?
+        return;
+    }
 
     // TODO - I should error out if the skeleton's model is not `model`
     // TODO   Should I just get rid of 
@@ -357,25 +514,6 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
 
 
 
-//
-// Sets a skeleton's current pose matrices using the animation data from `source_model`
-//
-void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_model, int framegroup_idx, float frametime) {
-    // TODO - Populate current pose matrices
-    // TODO - Populate the inverse 3x3 pose matrices for the normals as well.
-
-
-    // TODO - If `source_model` is not the skeleton's model, need to handle bone references by name.
-    // ... So the steps are:
-    // 1. Compute the model-space transforms for all bones using data from `source_model`
-    // 2. Map the transforms to the skeleton's bones by: 
-    //      name (if `source_model` is not the skeleton's original model)
-    //      index (if `source_model` is the skeleton's original model)
-}
-
-
-
-
 
 //
 // Call sequence for internal animations looks like this:
@@ -398,32 +536,8 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
 
 
 
-// skeletons are built
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// Temp container:
-// typedef struct model_s {
-//     uint32_t n_verts;
-//     vertex_t *verts;
-//     uint32_t n_meshes;
-//     mesh_t *meshes;
-// } model_t;
+// apply_skeleton_pose() // Populates posed_vertices with transforms from bones...
 
 
 
@@ -602,18 +716,18 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
 
     if(memcmp(iqm_header->magic, IQM_MAGIC, sizeof(iqm_header->magic))) {
         free(iqm_data);
-        return NULL; 
+        return nullptr; 
     }
 
     if(iqm_header->version != IQM_VERSION_2) {
         // TODO - also allow version1?
         free(iqm_data);
-        return NULL;
+        return nullptr;
     }
 
     if(iqm_header->filesize != file_len) {
         free(iqm_data);
-        return NULL;
+        return nullptr;
     }
 
 
@@ -712,10 +826,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     for(uint32_t i = 0; i < iqm_header->n_meshes; i++) {
         const char *material_name = (const char*) ((iqm_data + iqm_header->ofs_text) + iqm_meshes[i].material);
         // log_printf("Mesh[%d]: \"%s\"\n", i, material_name);
-        // log_printf("\tfirst vertex: %d\n", iqm_meshes[i].first_vert_idx);
-        // log_printf("\tn verts: %d\n", iqm_meshes[i].n_verts);
-        // log_printf("\tn tris: %d\n", iqm_meshes[i].n_tris);
-
 
         uint32_t first_vert = iqm_meshes[i].first_vert_idx;
         uint32_t first_tri = iqm_meshes[i].first_tri;
@@ -763,13 +873,25 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
         skel_model->bone_rest_scale[i].x = iqm_joints[i].scale[0];
         skel_model->bone_rest_scale[i].y = iqm_joints[i].scale[1];
         skel_model->bone_rest_scale[i].z = iqm_joints[i].scale[2];
-
-        // log_printf("Joint[%d]: \"%s\"\n", i, joint_name);
-        // log_printf("\tParent bone: %d\n", iqm_joints[i].parent_joint_idx);
-        // log_printf("\tPos: (%f, %f, %f)\n", iqm_joints[i].translate[0], iqm_joints[i].translate[1], iqm_joints[i].translate[2]);
-        // log_printf("\tRot: (%f, %f, %f, %f)\n", iqm_joints[i].rotate[0], iqm_joints[i].rotate[1], iqm_joints[i].rotate[2]);
-        // log_printf("\tScale: (%f, %f, %f)\n", iqm_joints[i].scale[0], iqm_joints[i].scale[1], iqm_joints[i].scale[2]);
     }
+
+    // By default, IQM exporter will have bones sorted such that a bone is 
+    // at a lower index in the bone array than any of its children.
+    // We'll rely on this to make computing bone transforms simpler.
+    // However, the IQM exporter allows arbitrary bone orderings to be specified
+    // Verify that the above bone-ordering assumption still holds.
+    
+    for(int i = 0; i < skel_model->n_bones; i++) {
+        // i-th bone's parent index must be less than i
+        if(i <= skel_model->bone_parent_idx[i]) {
+            log_printf("Error: IQM file bones are sorted incorrectly. Bone %d is located before its parent bone %d.\n", i, skel_model->bone_parent_idx[i]);
+            // TODO - Deallocate all allocated memory
+            return nullptr;
+        }
+    }
+
+
+
     // --------------------------------------------------
     // --------------------------------------------------
     // Parse all frames (poses)
@@ -807,10 +929,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             skel_model->frames_bone_scale[frame_bone_idx].y = pose_data[8];
             skel_model->frames_bone_scale[frame_bone_idx].z = pose_data[9];
 
-            // log_printf("Frame: %d, Pose: %d \n", i, j);
-            // log_printf("\tPos: (%f, %f, %f)\n", pos_x, pos_y, pos_z);
-            // log_printf("\tRot: (%f, %f, %f, %f)\n", quat_x, quat_y, quat_z, quat_w);
-            // log_printf("\tScale: (%f, %f, %f)\n", scale_x, scale_y, scale_z);
             // TODO - Compute matrix from these values?
         }
     }
@@ -837,13 +955,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             skel_model->framegroup_n_frames[i] = iqm_framegroups[i].n_frames;
             skel_model->framegroup_fps[i] = iqm_framegroups[i].framerate;
             skel_model->framegroup_loop[i] = iqm_framegroups[i].flags & (uint32_t) iqm_anim_flag::IQM_ANIM_FLAG_LOOP;
-
-            // log_printf("Framegroup: %d, \"%s\"\n", i, framegroup_name);
-            // log_printf("\tStart Frame: %d\n", iqm_framegroups[i].first_frame);
-            // log_printf("\tFrames: %d\n", iqm_framegroups[i].n_frames);
-            // log_printf("\tFramerate: %f\n", iqm_framegroups[i].framerate);
-            // log_printf("\tFlags: %d\n", iqm_framegroups[i].flags);
-            // log_printf("\t\tLoop?: %d\n", iqm_framegroups[i].flags & (uint32_t) iqm_anim_flag::IQM_ANIM_FLAG_LOOP);
         }
     }
     // --------------------------------------------------
@@ -854,7 +965,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // --------------------------------------------------
     const iqm_bounds_t *iqm_frame_bounds = (const iqm_bounds_t *)(iqm_data + iqm_header->ofs_bounds);
     if(iqm_header->ofs_bounds != 0) {
-        // TODO - Compute overall model mins / maxes by finding the most extreme points for all frames:
+        // Compute overall model mins / maxes by finding the most extreme points for all frames:
         for(uint16_t i = 0; i < iqm_header->n_frames; i++) {
             skel_model->mins.x = fmin(skel_model->mins.x, iqm_frame_bounds[i].mins[0]);
             skel_model->mins.y = fmin(skel_model->mins.y, iqm_frame_bounds[i].mins[1]);
