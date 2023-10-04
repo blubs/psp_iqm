@@ -24,11 +24,25 @@ typedef struct quat_s {
 } quat_t;
 
 
+// 
+// Dot-product between two vectors
+// 
 float dot_vec3(vec3_t a, vec3_t b) {
     return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
 }
 
 
+// 
+// Dot-product between two quaternions
+// 
+float dot_quat(quat_t a, quat_t b) {
+    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z) + (a.w * b.w);
+}
+
+
+// 
+// Linearly interpolate between two floats
+// 
 float lerp_float(float a, float b, float lerpfrac) {
     return a + lerpfrac * (b - a);
 }
@@ -72,7 +86,7 @@ quat_t slerp_quat(const quat_t a, const quat_t b, float lerpfrac) {
         return a;
     }
     quat_t result;
-    float dot_product = (a.x * b.x) + (a.y * b.y) + (a.z * b.z) + (a.w * b.w);
+    float dot_product = dot_quat(a,b);
     // Avoid div by zero
     if(dot_product > 0.999f) {
         // Revert to linear interpolation
@@ -105,7 +119,7 @@ quat_t slerp_quat(const quat_t a, const quat_t b, float lerpfrac) {
     result.z = (a.z * c1 + c.z * c2) * c3;
     result.w = (a.w * c1 + c.w * c2) * c3;
     // Normalize
-    float quat_nor = 1.0 / sqrtf((result.x * result.x) + (result.y * result.y) + (result.z * result.z) + (result.w * result.w));
+    float quat_nor = 1.0 / sqrtf(dot_quat(result,result));
     result.x *= quat_nor;
     result.y *= quat_nor;
     result.z *= quat_nor;
