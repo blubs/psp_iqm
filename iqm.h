@@ -129,6 +129,261 @@ quat_t slerp_quat(const quat_t a, const quat_t b, float lerpfrac) {
 
 
 
+// 
+// 3 row x 4 column matrix struct used to hold affine transforms
+// 
+// The general form of a 3D transform normally requires a 4x4 matrix, but by 
+// enforcing transforms to be affine, we can get away with a 3x4 matrix.
+//
+// Think of this matrix as a 4x4 with the following form:
+// 
+//  [   M   p ]
+//  [ 0 0 0 1 ]
+//  
+//  Where M is a 3x3 matrix containing the affine rotation / scaling component.
+//  p is a 3x1 column vector containing the positional offset of the transform.
+// 
+// Given that these 3x4 matrices are treated as 4x4s, they are invertable.
+// 
+// These matrices are column-major, with the indices of `m` laid out as:
+// 
+// [  0  3  6  9 ]
+// [  1  4  7 10 ]
+// [  2  5  8 11 ] 
+//
+typedef struct mat3x4_s {
+    float m[12];
+} mat3x4_t;
+
+
+// 
+// 3 row x 3 column matrix struct used to hold the rotation / scale component
+// of an affine 3D transform.
+// 
+// These matrices are column major, with the indices of `m` laid out as:
+// 
+// [  0  3  6 ]
+// [  1  4  7 ]
+// [  2  5  8 ] 
+typedef struct mat3x3_s {
+    float m[9];
+} mat3x3_t;
+
+
+
+// 
+// Builds and returns a 3x4 transform matrix filled with the top 3 rows of a 4x4 identify matrix
+// 
+mat3x4_t identity_mat3x4() {
+    mat3x4_t result;
+    result.m[0] = 1.0f; result.m[3] = 0.0f; result.m[6] = 0.0f; result.m[9]  = 0.0f; 
+    result.m[1] = 0.0f; result.m[4] = 1.0f; result.m[7] = 0.0f; result.m[10] = 0.0f; 
+    result.m[2] = 0.0f; result.m[5] = 0.0f; result.m[8] = 1.0f; result.m[11] = 0.0f; 
+    return result;
+}
+
+
+
+
+// 
+// Builds and returns a 3x4 translation transform matrix
+//
+mat3x4_t translation_mat3x4(vec3_t pos) {
+    mat3x4_t result = identity_mat3x4();
+    result.m[9]  = pos.x;
+    result.m[10] = pos.y;
+    result.m[11] = pos.z;
+    return result;
+}
+
+
+// 
+// Builds and returns a 3x4 scale transform matrix
+//
+mat3x4_t scale_mat3x4(vec3_t scale) {
+    mat3x4_t result = identity_mat3x4();
+    result.m[0]  = scale.x;
+    result.m[4] = scale.y;
+    result.m[8] = scale.z;
+    return result;
+}
+
+
+// 
+// Builds and returns a 3x4 rotation transform matrix
+//
+mat3x4_t rotate_mat3x4(quat_t rot) {
+    mat3x4_t result = identity_mat3x4();
+    // Precomputing floating point multiplications
+    float xx2 = 2.0f * rot.x * rot.x;
+    float yy2 = 2.0f * rot.y * rot.y;
+    float zz2 = 2.0f * rot.z * rot.z;
+    float xz2 = 2.0f * rot.x * rot.z;
+    float xy2 = 2.0f * rot.x * rot.y;
+    float yz2 = 2.0f * rot.y * rot.z;
+    float wx2 = 2.0f * rot.w * rot.x;
+    float wy2 = 2.0f * rot.w * rot.y;
+    float wz2 = 2.0f * rot.w * rot.z;
+    result.m[0] = 1.0f - yy2 - zz2;
+    result.m[1] = xy2 + wz2;
+    result.m[2] = xz2 - wy2;
+    result.m[3] = xy2 - wz2;
+    result.m[4] = 1.0f - xx2 - zz2;
+    result.m[5] = yz2 + wx2;
+    result.m[6] = xz2 + wy2;
+    result.m[7] = yz2 - wx2;
+    result.m[8] = 1.0f - xx2 - yy2;
+    return result;
+}
+
+
+// 
+// Multiplies two 3x4 matrices together 
+// (Made possible by treating them both as 4x4 matrices with the bottom row: [0 0 0 1])
+//
+mat3x4_t matmul_mat3x4_mat3x4(mat3x4_t a, mat3x4_t b) {
+    mat3x4_t result = identity_mat3x4();
+    result.m[0]  = a.m[0] * b.m[0]  + a.m[3] * b.m[1]  + a.m[6]  * b.m[2];
+    result.m[1]  = a.m[1] * b.m[0]  + a.m[4] * b.m[1]  + a.m[7]  * b.m[2]; 
+    result.m[2]  = a.m[2] * b.m[0]  + a.m[5] * b.m[1]  + a.m[8]  * b.m[2];
+
+    result.m[3]  = a.m[0] * b.m[3]  + a.m[3] * b.m[4]  + a.m[6]  * b.m[5];
+    result.m[4]  = a.m[1] * b.m[3]  + a.m[4] * b.m[4]  + a.m[7]  * b.m[5];
+    result.m[5]  = a.m[2] * b.m[3]  + a.m[5] * b.m[4]  + a.m[8]  * b.m[5];
+
+    result.m[6]  = a.m[0] * b.m[6]  + a.m[3] * b.m[7]  + a.m[6]  * b.m[8];
+    result.m[7]  = a.m[1] * b.m[6]  + a.m[4] * b.m[7]  + a.m[7]  * b.m[8];
+    result.m[8]  = a.m[2] * b.m[6]  + a.m[5] * b.m[7]  + a.m[8]  * b.m[8];
+
+    result.m[9]  = a.m[0] * b.m[9]  + a.m[3] * b.m[10] + a.m[6]  * b.m[11] + a.m[9];
+    result.m[10] = a.m[1] * b.m[9]  + a.m[4] * b.m[10] + a.m[7]  * b.m[11] + a.m[10];
+    result.m[11] = a.m[2] * b.m[9]  + a.m[5] * b.m[10] + a.m[8]  * b.m[11] + a.m[11];
+    return result;
+}
+
+
+// 
+// Gets the top-left 3x3 matrix from a 3x4 matrix
+// 
+mat3x3_t get_mat3x4_mat3x3(mat3x4_t mat) {
+    mat3x3_t result;
+    result.m[0] = mat.m[0]; result.m[3] = mat.m[3]; result.m[6] = mat.m[6]; 
+    result.m[1] = mat.m[1]; result.m[4] = mat.m[4]; result.m[7] = mat.m[7]; 
+    result.m[2] = mat.m[2]; result.m[5] = mat.m[5]; result.m[8] = mat.m[8]; 
+    return result;
+}
+
+
+// 
+// Inverts a 3x3 matrix
+// https://stackoverflow.com/a/18504573
+// 
+mat3x3_t invert_mat3x3(mat3x3_t mat) {
+    float det = mat.m[0] * (mat.m[4] * mat.m[8] - mat.m[5] * mat.m[7]) -
+                mat.m[3] * (mat.m[1] * mat.m[8] - mat.m[7] * mat.m[2]) +
+                mat.m[6] * (mat.m[1] * mat.m[5] - mat.m[4] * mat.m[2]);
+    mat3x3_t result;
+    // If determinant is close to 0, return 0 matrix:
+    if(fabs(det) < 1e-5) {
+        return result;
+    }
+    float inv_det = 1.0f / det;
+    result.m[0] = (mat.m[6] * mat.m[8] - mat.m[5] * mat.m[7]) * inv_det;
+    result.m[1] = (mat.m[4] * mat.m[5] - mat.m[3] * mat.m[8]) * inv_det;
+    result.m[2] = (mat.m[3] * mat.m[7] - mat.m[6] * mat.m[4]) * inv_det;
+    result.m[3] = (mat.m[7] * mat.m[2] - mat.m[1] * mat.m[8]) * inv_det;
+    result.m[4] = (mat.m[0] * mat.m[8] - mat.m[6] * mat.m[2]) * inv_det;
+    result.m[5] = (mat.m[1] * mat.m[6] - mat.m[0] * mat.m[7]) * inv_det;
+    result.m[6] = (mat.m[1] * mat.m[5] - mat.m[2] * mat.m[4]) * inv_det;
+    result.m[7] = (mat.m[2] * mat.m[3] - mat.m[0] * mat.m[5]) * inv_det;
+    result.m[8] = (mat.m[0] * mat.m[4] - mat.m[1] * mat.m[3]) * inv_det;
+    return result;
+}
+
+// 
+// Transposes a 3x3 matrix
+//
+mat3x3_t transpose_mat3x3(mat3x3_t mat) {
+    mat3x3_t result;
+    result.m[0] = mat.m[0];
+    result.m[1] = mat.m[3];
+    result.m[2] = mat.m[6];
+    result.m[3] = mat.m[1];
+    result.m[4] = mat.m[4];
+    result.m[5] = mat.m[7];
+    result.m[6] = mat.m[2];
+    result.m[7] = mat.m[5];
+    result.m[8] = mat.m[8];
+    return result;
+}
+
+
+
+// 
+// Inverts a 3x4 matrix by treating it as a 4x4 affine transform matrix.
+// https://stackoverflow.com/a/2625420
+// 
+mat3x4_t invert_mat3x4_t(mat3x4_t mat) {
+    // Get the top-left 3x3 matrix from the 3x4 matrix
+    mat3x3_t m3x3 = get_mat3x4_mat3x3(mat);
+    // Invert it
+    mat3x3_t inv_m3x3 = invert_mat3x3(m3x3);
+
+    // Get the translation vector from the mat3x4 matrix
+    vec3_t translation;
+    translation.x = mat.m[9];
+    translation.y = mat.m[10];
+    translation.z = mat.m[11];
+
+    // Multiply: (-1.0 * inv_m3x3 * translation)
+    vec3_t inv_translation;
+    inv_translation.x = -1.0f * (inv_m3x3.m[0] * translation.x + inv_m3x3.m[3] * translation.y + inv_m3x3.m[6] * translation.z);
+    inv_translation.y = -1.0f * (inv_m3x3.m[1] * translation.x + inv_m3x3.m[4] * translation.y + inv_m3x3.m[7] * translation.z);
+    inv_translation.z = -1.0f * (inv_m3x3.m[2] * translation.x + inv_m3x3.m[5] * translation.y + inv_m3x3.m[8] * translation.z);
+
+    mat3x4_t result;
+    // Copy in inv_m3x3 as the upper-left 3x3
+    result.m[0] = inv_m3x3.m[0]; result.m[3] = inv_m3x3.m[3]; result.m[6] = inv_m3x3.m[6];
+    result.m[1] = inv_m3x3.m[1]; result.m[4] = inv_m3x3.m[4]; result.m[7] = inv_m3x3.m[7];
+    result.m[2] = inv_m3x3.m[2]; result.m[5] = inv_m3x3.m[5]; result.m[8] = inv_m3x3.m[8];
+    // Copy in inv_translation as the right-most column
+    result.m[9]  = inv_translation.x;
+    result.m[10] = inv_translation.y; 
+    result.m[11] = inv_translation.z; 
+    return result;
+}
+
+
+
+// 
+// Multiplies 3x3 matrix * 3x1 column vector vec
+// Returns a 3x1 column vector
+// 
+vec3_t mul_mat3x3_vec3(mat3x3_t mat, vec3_t vec) {
+    vec3_t result;
+    result.x = mat.m[0] * vec.x + mat.m[3] * vec.y + mat.m[6] * vec.z;
+    result.y = mat.m[1] * vec.x + mat.m[4] * vec.y + mat.m[7] * vec.z;
+    result.z = mat.m[2] * vec.x + mat.m[5] * vec.y + mat.m[8] * vec.z;
+    return result;
+}
+
+// 
+// Multiplies 3x4 matrix * 3x1 column vector vec.
+//
+// This function treats the matrix like a 4x4 with bottom row: [0 0 0 1]
+// This function treats the vector as a 4x1 column vector: [vec.x vec.y vec.z 1]
+//
+// Returns a 3x1 column vector
+// 
+vec3_t mul_mat3x4_vec3(mat3x4_t mat, vec3_t vec) {
+    vec3_t result;
+    result.x = mat.m[0] * vec.x + mat.m[3] * vec.y + mat.m[6] * vec.z + mat.m[9];
+    result.y = mat.m[1] * vec.x + mat.m[4] * vec.y + mat.m[7] * vec.z + mat.m[10];
+    result.z = mat.m[2] * vec.x + mat.m[5] * vec.y + mat.m[8] * vec.z + mat.m[11];
+    return result;
+}
+
+
 typedef struct iqm_header_s {
     char magic[16];
     uint32_t version;
@@ -399,6 +654,7 @@ void process_anim_events(skeletal_model_t *model, int framegroup_idx, float star
     // TODO - Decide if the window domain should be closed on either side.
     // TODO - Add event callback somehow to this function
 }
+
 
 //
 // Sets a skeleton's current pose matrices using the animation data from `source_model`
