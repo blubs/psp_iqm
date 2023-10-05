@@ -212,7 +212,7 @@ mat3x4_t scale_mat3x4(vec3_t scale) {
 // 
 // Builds and returns a 3x4 rotation transform matrix
 //
-mat3x4_t rotate_mat3x4(quat_t rot) {
+mat3x4_t rotation_mat3x4(quat_t rot) {
     mat3x4_t result = identity_mat3x4();
     // Precomputing floating point multiplications
     float xx2 = 2.0f * rot.x * rot.x;
@@ -260,6 +260,20 @@ mat3x4_t matmul_mat3x4_mat3x4(mat3x4_t a, mat3x4_t b) {
     result.m[11] = a.m[2] * b.m[9]  + a.m[5] * b.m[10] + a.m[8]  * b.m[11] + a.m[11];
     return result;
 }
+
+//
+// Builds and returns a 3x4 transform matrix from the corresponding translation vector, rotation quaternion, and scale vector
+//
+mat3x4_t translate_rotate_scale_mat3x4(vec3_t translation, quat_t rotation, vec3_t scale ) {
+    mat3x4_t translation_mat = translation_mat3x4(translation);
+    mat3x4_t rotation_mat = rotation_mat3x4(rotation);
+    mat3x4_t scale_mat = scale_mat3x4(scale);
+
+    // First scale, then rotate, then translate
+    mat3x4_t result = matmul_mat3x4_mat3x4(translation_mat, matmul_mat3x4_mat3x4(rotation_mat, scale_mat));
+    return result;
+}
+
 
 
 // 
@@ -323,7 +337,7 @@ mat3x3_t transpose_mat3x3(mat3x3_t mat) {
 // Inverts a 3x4 matrix by treating it as a 4x4 affine transform matrix.
 // https://stackoverflow.com/a/2625420
 // 
-mat3x4_t invert_mat3x4_t(mat3x4_t mat) {
+mat3x4_t invert_mat3x4(mat3x4_t mat) {
     // Get the top-left 3x3 matrix from the 3x4 matrix
     mat3x3_t m3x3 = get_mat3x4_mat3x3(mat);
     // Invert it
@@ -720,6 +734,10 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
         vec3_t bone_pos = lerp_vec3(frame1_pos, frame2_pos, lerpfrac);
         quat_t bone_rot = slerp_quat(frame1_rot, frame2_rot, lerpfrac);
         vec3_t bone_scale = lerp_vec3(frame1_scale, frame2_scale, lerpfrac);
+        mat3x4_t bone_transform = translate_rotate_scale_mat3x4(bone_pos, bone_rot, bone_scale);
+
+
+
 
 
 
@@ -731,6 +749,13 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
         quat_t bone_rest_rot = source_model->bone_rest_rot[i];
         vec3_t bone_rest_scale = source_model->bone_rest_scale[i];
         // ------------–------------–------------–------------–------------–---
+        mat3x4_t bone_rest_transform = translate_rotate_scale_mat3x4(bone_rest_pos, bone_rest_rot, bone_rest_scale);
+        mat3x4_t inv_bone_rest_transform = invert_mat3x4(bone_rest_transform);
+
+
+
+
+
 
 
 
