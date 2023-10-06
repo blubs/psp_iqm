@@ -644,7 +644,11 @@ typedef struct skeletal_model_s {
 
 typedef struct skeletal_skeleton_s {
     const skeletal_model_t *model; // Animation / skeleton data is pulled from this model
-    // TODO - Fields for the current interpolated skeletal bone pose matrices
+    // Holds last built bone transforms
+    mat3x4_t *bone_transforms;
+    // Holds the 3x3 inverse-transpose of the above transform
+    // Used to transform normals from rest pose to current pose
+    mat3x3_t *bone_normal_transforms;
 } skeletal_skeleton_t;
 
 
@@ -655,6 +659,8 @@ typedef struct skeletal_skeleton_s {
 skeletal_skeleton_t *create_skeleton(skeletal_model_t *model) {
     skeletal_skeleton_t *skeleton = (skeletal_skeleton_t*) malloc(sizeof(skeletal_skeleton_t));
     skeleton->model = model;
+    skeleton->bone_transforms = (mat3x4_t*) malloc(sizeof(mat3x4_t) * skeleton->model->n_bones);
+    skeleton->bone_normal_transforms = (mat3x3_t*) malloc(sizeof(mat3x3_t) * skeleton->model->n_bones);
     // TODO - allocate memory for other fields in the skeleton to store bone current pose matrices
     return skeleton;
 }
@@ -723,7 +729,7 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
     // TODO - Loop through bones, building up model-space bone transforms
     // FIXME - Do we need to use the bone rest positions for anything? or do they just get replaced?
 
-    for(int i = 0; i < source_model->n_bones; i++) {
+    for(uint32_t i = 0; i < source_model->n_bones; i++) {
         vec3_t frame1_pos = source_model->frames_bone_pos[source_model->n_bones * frame1_idx + i];
         vec3_t frame2_pos = source_model->frames_bone_pos[source_model->n_bones * frame2_idx + i];
         quat_t frame1_rot = source_model->frames_bone_rot[source_model->n_bones * frame1_idx + i];
@@ -731,10 +737,11 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
         vec3_t frame1_scale = source_model->frames_bone_scale[source_model->n_bones * frame1_idx + i];
         vec3_t frame2_scale = source_model->frames_bone_scale[source_model->n_bones * frame2_idx + i];
 
-        vec3_t bone_pos = lerp_vec3(frame1_pos, frame2_pos, lerpfrac);
-        quat_t bone_rot = slerp_quat(frame1_rot, frame2_rot, lerpfrac);
-        vec3_t bone_scale = lerp_vec3(frame1_scale, frame2_scale, lerpfrac);
-        mat3x4_t bone_transform = translate_rotate_scale_mat3x4(bone_pos, bone_rot, bone_scale);
+        // Get local bone transforms (relative to parent space)
+        vec3_t bone_local_pos = lerp_vec3(frame1_pos, frame2_pos, lerpfrac);
+        quat_t bone_local_rot = slerp_quat(frame1_rot, frame2_rot, lerpfrac);
+        vec3_t bone_local_scale = lerp_vec3(frame1_scale, frame2_scale, lerpfrac);
+        mat3x4_t bone_local_transform = translate_rotate_scale_mat3x4(bone_local_pos, bone_local_rot, bone_local_scale);
 
 
 
@@ -745,12 +752,38 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
         // Calculate the inverse rest pose transform for this bone:
         // TODO - Calculate this once at load and stash it
         // ------------–------------–------------–------------–------------–---
-        vec3_t bone_rest_pos = source_model->bone_rest_pos[i];
-        quat_t bone_rest_rot = source_model->bone_rest_rot[i];
-        vec3_t bone_rest_scale = source_model->bone_rest_scale[i];
+        vec3_t bone_rest_local_pos = source_model->bone_rest_pos[i];
+        quat_t bone_rest_local_rot = source_model->bone_rest_rot[i];
+        vec3_t bone_rest_local_scale = source_model->bone_rest_scale[i];
         // ------------–------------–------------–------------–------------–---
-        mat3x4_t bone_rest_transform = translate_rotate_scale_mat3x4(bone_rest_pos, bone_rest_rot, bone_rest_scale);
-        mat3x4_t inv_bone_rest_transform = invert_mat3x4(bone_rest_transform);
+        // Bone's local rest pose transform (relative to parent space)
+        mat3x4_t bone_rest_local_transform = translate_rotate_scale_mat3x4(bone_rest_local_pos, bone_rest_local_rot, bone_rest_local_scale);
+        mat3x4_t inv_bone_rest_local_transform = invert_mat3x4(bone_rest_local_transform);
+        // FIXME - Is this relative to parent? or is the rest pose model-space?
+        // FIXME - I think it's gonna' be in local-space... if so, need to compute and stash these as we'll need the parent's rest pose
+
+
+        // Build rest model-space -> posed model-space transform for this bone
+        mat3x4_t bone_model_transform;
+        mat3x3_t bone_model_normal_transform;
+
+        int parent_bone_idx = skeleton->model->bone_parent_idx[i];
+        if(parent_bone_idx >= 0) {
+            mat3x4_t parent_bone_model_transform = skeleton->bone_transforms[parent_bone_idx];
+            // Go from rest-model space -> bone local space -> parent posed local space -> posed model space
+            bone_model_transform = matmul_mat3x4_mat3x4( bone_local_transform, matmul_mat3x4_mat3x4(parent_bone_model_transform, inv_bone_rest_local_transform));
+        }
+        else {
+            // Go from rest-model space -> bone local space -> parent posed local space -> posed model space
+            bone_model_transform = matmul_mat3x4_mat3x4( bone_local_transform, inv_bone_rest_local_transform);
+        }
+
+        // Invert-transpose the upper-left 3x3 matrix to get the transform that should be applied to vertex normals
+        bone_model_normal_transform = transpose_mat3x3(invert_mat3x3(get_mat3x4_mat3x3(bone_model_transform)));
+
+        skeleton->bone_transforms[i] = bone_model_transform;
+        skeleton->bone_normal_transforms[i] = bone_model_normal_transform;
+
 
 
 
@@ -1176,7 +1209,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // However, the IQM exporter allows arbitrary bone orderings to be specified
     // Verify that the above bone-ordering assumption still holds.
     
-    for(int i = 0; i < skel_model->n_bones; i++) {
+    for(uint32_t i = 0; i < skel_model->n_bones; i++) {
         // i-th bone's parent index must be less than i
         if(i <= skel_model->bone_parent_idx[i]) {
             log_printf("Error: IQM file bones are sorted incorrectly. Bone %d is located before its parent bone %d.\n", i, skel_model->bone_parent_idx[i]);
