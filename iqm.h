@@ -33,6 +33,30 @@ float dot_vec3(vec3_t a, vec3_t b) {
 
 
 // 
+// Add two vec3_t structs
+//
+vec3_t add_vec3(vec3_t a, vec3_t b) {
+    vec3_t result;
+    result.x = a.x + b.x;
+    result.y = a.y + b.y;
+    result.z = a.z + b.z;
+    return result;
+}
+
+// 
+// Multiply a float by a vec3 
+// 
+vec3_t mul_float_vec3(float a, vec3_t b) {
+    vec3_t result;
+    result.x = a * b.x;
+    result.y = a * b.y;
+    result.z = a * b.z;
+    return result;
+}
+
+
+
+// 
 // Dot-product between two quaternions
 // 
 float dot_quat(quat_t a, quat_t b) {
@@ -604,7 +628,7 @@ typedef struct skeletal_model_s {
     // List of bones
     uint32_t n_bones;
     char **bone_name;
-    uint16_t *bone_parent_idx;
+    int16_t *bone_parent_idx;
 
     vec3_t *bone_rest_pos;
     quat_t *bone_rest_rot;
@@ -780,7 +804,6 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
 
         // Invert-transpose the upper-left 3x3 matrix to get the transform that should be applied to vertex normals
         bone_model_normal_transform = transpose_mat3x3(invert_mat3x3(get_mat3x4_mat3x3(bone_model_transform)));
-
         skeleton->bone_transforms[i] = bone_model_transform;
         skeleton->bone_normal_transforms[i] = bone_model_normal_transform;
 
@@ -808,6 +831,45 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
     if(skeleton->model != model) {
         // FIXME - Is this a valid condition?
         return;
+    }
+
+
+    // Apply skeleton pose to all vertices
+    for(uint32_t i = 0; i < model->n_verts; i++) {
+        vec3_t vert_rest_pos = model->vert_rest_positions[i];
+        vec3_t vert_pos;
+
+        float total_weight = 0.0f;
+
+        if(model->vert_bone_idxs[4*i+0] >= 0) {
+            int vert_bone_idx = model->vert_bone_idxs[4*i+0];
+            float vert_bone_weight = model->vert_bone_weights[4*i+0];
+            vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_pos);
+            vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+        }
+        // if(model->vert_bone_idxs[4*i+1] >= 0) {
+        //     int vert_bone_idx = model->vert_bone_idxs[4*i+1];
+        //     float vert_bone_weight = model->vert_bone_weights[4*i+1];
+        //     vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_pos);
+        //     vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+        // }
+        // if(model->vert_bone_idxs[4*i+2] >= 0) {
+        //     int vert_bone_idx = model->vert_bone_idxs[4*i+2];
+        //     float vert_bone_weight = model->vert_bone_weights[4*i+2];
+        //     vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_pos);
+        //     vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+        // }
+        // if(model->vert_bone_idxs[4*i+3] >= 0) {
+        //     int vert_bone_idx = model->vert_bone_idxs[4*i+3];
+        //     float vert_bone_weight = model->vert_bone_weights[4*i+3];
+        //     vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_pos);
+        //     vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+        // }
+
+        model->verts[i].x = vert_pos.x / total_weight;
+        model->verts[i].y = vert_pos.y / total_weight;
+        model->verts[i].z = vert_pos.z / total_weight;
+        // TODO - Update / write vertex normals
     }
 
     // TODO - I should error out if the skeleton's model is not `model`
@@ -1211,7 +1273,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     
     for(uint32_t i = 0; i < skel_model->n_bones; i++) {
         // i-th bone's parent index must be less than i
-        if(i <= skel_model->bone_parent_idx[i]) {
+        if((int) i <= skel_model->bone_parent_idx[i]) {
             log_printf("Error: IQM file bones are sorted incorrectly. Bone %d is located before its parent bone %d.\n", i, skel_model->bone_parent_idx[i]);
             // TODO - Deallocate all allocated memory
             return nullptr;
