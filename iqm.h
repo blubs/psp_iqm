@@ -1242,7 +1242,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     log_printf("Parsing joints...\n");
     skel_model->n_bones = iqm_header->n_joints;
     skel_model->bone_name = (char**) malloc(sizeof(char*) * skel_model->n_bones);
-    skel_model->bone_parent_idx = (uint16_t*) malloc(sizeof(uint16_t) * skel_model->n_bones);
+    skel_model->bone_parent_idx = (int16_t*) malloc(sizeof(int16_t) * skel_model->n_bones);
     skel_model->bone_rest_pos = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_bones);
     skel_model->bone_rest_rot = (quat_t*) malloc(sizeof(quat_t) * skel_model->n_bones);
     skel_model->bone_rest_scale = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_bones);
@@ -1293,6 +1293,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     skel_model->frames_bone_scale = (vec3_t *) malloc(sizeof(vec3_t) * skel_model->n_bones * skel_model->n_frames);
 
     const uint16_t *frames_data = (const uint16_t*)(iqm_data + iqm_header->ofs_frames);
+    int frames_data_ofs = 0;
     const iqm_pose_quaternion_t *iqm_poses = (const iqm_pose_quaternion_t*) (iqm_data + iqm_header->ofs_poses);
 
     // Iterate over actual frames in IQM file:
@@ -1304,7 +1305,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             for(uint32_t k = 0; k < 10; k++) {
                 pose_data[k] = iqm_poses[j].channel_ofs[k];
                 if(iqm_poses[j].mask & (1 << k)) {
-                    pose_data[k] += frames_data[i*iqm_header->n_poses + j] * iqm_poses[j].channel_scale[k];
+                    pose_data[k] += frames_data[frames_data_ofs++] * iqm_poses[j].channel_scale[k];
                 }
             }
             int frame_bone_idx = i * skel_model->n_bones + j;
@@ -1327,7 +1328,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // --------------------------------------------------
     // Parse animations (framegroups)
     // --------------------------------------------------
-
     skel_model->n_framegroups = iqm_header->n_anims;
     skel_model->framegroup_name = (char**) malloc(sizeof(char*) * skel_model->n_framegroups);
     skel_model->framegroup_start_frame = (uint32_t*) malloc(sizeof(uint32_t) * skel_model->n_framegroups);
