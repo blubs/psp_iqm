@@ -165,7 +165,7 @@ quat_t slerp_quat(const quat_t a, const quat_t b, float lerpfrac) {
 //  [ 0 0 0 1 ]
 //  
 //  Where M is a 3x3 matrix containing the affine rotation / scaling component.
-//  p is a 3x1 column vector containing the positional offset of the transform.
+//  p is a 3x1 column vector containing the translation of the transform.
 // 
 // Given that these 3x4 matrices are treated as 4x4s, they are invertable.
 // 
@@ -317,7 +317,7 @@ mat3x3_t get_mat3x4_mat3x3(mat3x4_t mat) {
 // https://stackoverflow.com/a/18504573
 // 
 mat3x3_t invert_mat3x3(mat3x3_t mat) {
-    float det = mat.m[0] * (mat.m[4] * mat.m[8] - mat.m[5] * mat.m[7]) -
+    float det = mat.m[0] * (mat.m[4] * mat.m[8] - mat.m[7] * mat.m[5]) -
                 mat.m[3] * (mat.m[1] * mat.m[8] - mat.m[7] * mat.m[2]) +
                 mat.m[6] * (mat.m[1] * mat.m[5] - mat.m[4] * mat.m[2]);
     mat3x3_t result;
@@ -326,14 +326,14 @@ mat3x3_t invert_mat3x3(mat3x3_t mat) {
         return result;
     }
     float inv_det = 1.0f / det;
-    result.m[0] = (mat.m[6] * mat.m[8] - mat.m[5] * mat.m[7]) * inv_det;
-    result.m[1] = (mat.m[4] * mat.m[5] - mat.m[3] * mat.m[8]) * inv_det;
-    result.m[2] = (mat.m[3] * mat.m[7] - mat.m[6] * mat.m[4]) * inv_det;
-    result.m[3] = (mat.m[7] * mat.m[2] - mat.m[1] * mat.m[8]) * inv_det;
-    result.m[4] = (mat.m[0] * mat.m[8] - mat.m[6] * mat.m[2]) * inv_det;
-    result.m[5] = (mat.m[1] * mat.m[6] - mat.m[0] * mat.m[7]) * inv_det;
-    result.m[6] = (mat.m[1] * mat.m[5] - mat.m[2] * mat.m[4]) * inv_det;
-    result.m[7] = (mat.m[2] * mat.m[3] - mat.m[0] * mat.m[5]) * inv_det;
+    result.m[0] = (mat.m[4] * mat.m[8] - mat.m[5] * mat.m[7]) * inv_det;
+    result.m[1] = (mat.m[2] * mat.m[7] - mat.m[1] * mat.m[8]) * inv_det;
+    result.m[2] = (mat.m[1] * mat.m[5] - mat.m[2] * mat.m[4]) * inv_det;
+    result.m[3] = (mat.m[5] * mat.m[6] - mat.m[3] * mat.m[8]) * inv_det;
+    result.m[4] = (mat.m[0] * mat.m[8] - mat.m[2] * mat.m[6]) * inv_det;
+    result.m[5] = (mat.m[2] * mat.m[3] - mat.m[0] * mat.m[5]) * inv_det;
+    result.m[6] = (mat.m[3] * mat.m[7] - mat.m[4] * mat.m[6]) * inv_det;
+    result.m[7] = (mat.m[1] * mat.m[6] - mat.m[0] * mat.m[7]) * inv_det;
     result.m[8] = (mat.m[0] * mat.m[4] - mat.m[1] * mat.m[3]) * inv_det;
     return result;
 }
@@ -356,16 +356,26 @@ mat3x3_t transpose_mat3x3(mat3x3_t mat) {
 }
 
 
+// 
+// Multiplies 3x3 matrix * 3x1 column vector vec
+// Returns a 3x1 column vector
+// 
+vec3_t mul_mat3x3_vec3(mat3x3_t mat, vec3_t vec) {
+    vec3_t result;
+    result.x = mat.m[0] * vec.x + mat.m[3] * vec.y + mat.m[6] * vec.z;
+    result.y = mat.m[1] * vec.x + mat.m[4] * vec.y + mat.m[7] * vec.z;
+    result.z = mat.m[2] * vec.x + mat.m[5] * vec.y + mat.m[8] * vec.z;
+    return result;
+}
+
 
 // 
 // Inverts a 3x4 matrix by treating it as a 4x4 affine transform matrix.
 // https://stackoverflow.com/a/2625420
 // 
 mat3x4_t invert_mat3x4(mat3x4_t mat) {
-    // Get the top-left 3x3 matrix from the 3x4 matrix
-    mat3x3_t m3x3 = get_mat3x4_mat3x3(mat);
-    // Invert it
-    mat3x3_t inv_m3x3 = invert_mat3x3(m3x3);
+    // Get the top-left 3x3 matrix from the 3x4 matrix, and invert it
+    mat3x3_t inv_m3x3 = invert_mat3x3(get_mat3x4_mat3x3(mat));
 
     // Get the translation vector from the mat3x4 matrix
     vec3_t translation;
@@ -374,10 +384,7 @@ mat3x4_t invert_mat3x4(mat3x4_t mat) {
     translation.z = mat.m[11];
 
     // Multiply: (-1.0 * inv_m3x3 * translation)
-    vec3_t inv_translation;
-    inv_translation.x = -1.0f * (inv_m3x3.m[0] * translation.x + inv_m3x3.m[3] * translation.y + inv_m3x3.m[6] * translation.z);
-    inv_translation.y = -1.0f * (inv_m3x3.m[1] * translation.x + inv_m3x3.m[4] * translation.y + inv_m3x3.m[7] * translation.z);
-    inv_translation.z = -1.0f * (inv_m3x3.m[2] * translation.x + inv_m3x3.m[5] * translation.y + inv_m3x3.m[8] * translation.z);
+    vec3_t inv_translation = mul_float_vec3(-1.0f, mul_mat3x3_vec3(inv_m3x3, translation));
 
     mat3x4_t result;
     // Copy in inv_m3x3 as the upper-left 3x3
@@ -393,17 +400,6 @@ mat3x4_t invert_mat3x4(mat3x4_t mat) {
 
 
 
-// 
-// Multiplies 3x3 matrix * 3x1 column vector vec
-// Returns a 3x1 column vector
-// 
-vec3_t mul_mat3x3_vec3(mat3x3_t mat, vec3_t vec) {
-    vec3_t result;
-    result.x = mat.m[0] * vec.x + mat.m[3] * vec.y + mat.m[6] * vec.z;
-    result.y = mat.m[1] * vec.x + mat.m[4] * vec.y + mat.m[7] * vec.z;
-    result.z = mat.m[2] * vec.x + mat.m[5] * vec.y + mat.m[8] * vec.z;
-    return result;
-}
 
 // 
 // Multiplies 3x4 matrix * 3x1 column vector vec.
@@ -673,6 +669,10 @@ typedef struct skeletal_skeleton_s {
     // Holds the 3x3 inverse-transpose of the above transform
     // Used to transform normals from rest pose to current pose
     mat3x3_t *bone_normal_transforms;
+    // Holds the 3x4 rest pose transform for each bone TODO - Should stash this in the model? FIXME - Do we even need this?
+    // mat3x4_t *bone_rest_transforms;
+    // Holds the inverted 3x4 rest pose transform for each bone TODO - Should stash this in the model?
+    mat3x4_t *inv_bone_rest_transforms;
 } skeletal_skeleton_t;
 
 
@@ -776,13 +776,32 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
         // Calculate the inverse rest pose transform for this bone:
         // TODO - Calculate this once at load and stash it
         // ------------–------------–------------–------------–------------–---
-        vec3_t bone_rest_local_pos = source_model->bone_rest_pos[i];
-        quat_t bone_rest_local_rot = source_model->bone_rest_rot[i];
-        vec3_t bone_rest_local_scale = source_model->bone_rest_scale[i];
+        // vec3_t bone_rest_local_pos = source_model->bone_rest_pos[i];
+        // quat_t bone_rest_local_rot = source_model->bone_rest_rot[i];
+        // vec3_t bone_rest_local_scale = source_model->bone_rest_scale[i];
         // ------------–------------–------------–------------–------------–---
         // Bone's local rest pose transform (relative to parent space)
-        mat3x4_t bone_rest_local_transform = translate_rotate_scale_mat3x4(bone_rest_local_pos, bone_rest_local_rot, bone_rest_local_scale);
-        mat3x4_t inv_bone_rest_local_transform = invert_mat3x4(bone_rest_local_transform);
+        
+        // ----------------------------------------
+        // Build transform that maps bone local-space to model-space
+        // ----------------------------------------
+        mat3x4_t bone_rest_model_transform = identity_mat3x4();
+        int bone_idx = i;
+        // log_printf("==== bone: %d ====\n", bone_idx);
+        while(bone_idx >= 0) {
+            // Find this bone's rest pose transform relative to its parent. Concat it
+            bone_rest_model_transform = matmul_mat3x4_mat3x4(
+                translate_rotate_scale_mat3x4(
+                    source_model->bone_rest_pos[bone_idx],
+                    source_model->bone_rest_rot[bone_idx],
+                    source_model->bone_rest_scale[bone_idx]
+                ),
+                bone_rest_model_transform
+            );
+            bone_idx = skeleton->model->bone_parent_idx[bone_idx];
+        }
+        mat3x4_t inv_bone_rest_model_transform = invert_mat3x4(bone_rest_model_transform);
+        skeleton->inv_bone_rest_transforms[i] = inv_bone_rest_model_transform;
         // FIXME - Is this relative to parent? or is the rest pose model-space?
         // FIXME - I think it's gonna' be in local-space... if so, need to compute and stash these as we'll need the parent's rest pose
 
@@ -795,17 +814,17 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
         if(parent_bone_idx >= 0) {
             mat3x4_t parent_bone_model_transform = skeleton->bone_transforms[parent_bone_idx];
             // Go from rest-model space -> bone local space -> parent posed local space -> posed model space
-            bone_model_transform = matmul_mat3x4_mat3x4( bone_local_transform, matmul_mat3x4_mat3x4(parent_bone_model_transform, inv_bone_rest_local_transform));
+            bone_model_transform = matmul_mat3x4_mat3x4( skeleton->bone_transforms[parent_bone_idx], bone_local_transform );
         }
         else {
             // Go from rest-model space -> bone local space -> parent posed local space -> posed model space
-            bone_model_transform = matmul_mat3x4_mat3x4( bone_local_transform, inv_bone_rest_local_transform);
+            bone_model_transform = bone_local_transform;
+            // bone_model_transform = matmul_mat3x4_mat3x4( bone_local_transform, inv_bone_rest_model_transform);
         }
 
         // Invert-transpose the upper-left 3x3 matrix to get the transform that should be applied to vertex normals
-        bone_model_normal_transform = transpose_mat3x3(invert_mat3x3(get_mat3x4_mat3x3(bone_model_transform)));
+        // bone_model_normal_transform = transpose_mat3x3(invert_mat3x3(get_mat3x4_mat3x3(bone_model_transform)));
         skeleton->bone_transforms[i] = bone_model_transform;
-        skeleton->bone_normal_transforms[i] = bone_model_normal_transform;
 
 
 
@@ -816,6 +835,12 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
 
 
 
+    }
+
+    // Now that all bone transforms have been computed for the current pose, multiply in the inverse rest pose transforms
+    // These transforms will take the vertices from model-space to each bone's local-space:
+    for(uint32_t i = 0; i < source_model->n_bones; i++) {
+        skeleton->bone_transforms[i] = matmul_mat3x4_mat3x4(skeleton->bone_transforms[i], skeleton->inv_bone_rest_transforms[i]);
     }
 
 
@@ -837,34 +862,27 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
     // Apply skeleton pose to all vertices
     for(uint32_t i = 0; i < model->n_verts; i++) {
         vec3_t vert_rest_pos = model->vert_rest_positions[i];
-        vec3_t vert_pos;
-
+        // Accumulate final vertex position here to calculate weighted sum
+        vec3_t vert_pos = { 0.0f, 0.0f, 0.0f};
+        // Accumulate weighted sum total here
         float total_weight = 0.0f;
 
-        if(model->vert_bone_idxs[4*i+0] >= 0) {
-            int vert_bone_idx = model->vert_bone_idxs[4*i+0];
-            float vert_bone_weight = model->vert_bone_weights[4*i+0];
-            vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_pos);
-            vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+        // Loop through the vert's 4 bone indices
+        for(int j = 0; j < 4; j++) {
+            int vert_bone_idx = model->vert_bone_idxs[4*i + j];
+            if(vert_bone_idx >= 0) {
+                float vert_bone_weight = model->vert_bone_weights[4*i + j];
+                // vert_bone_weight = 1.0f;
+                // vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->inv_bone_rest_transforms[vert_bone_idx], vert_rest_pos);
+                vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
+                // vec3_t vert_bone_pos = mul_mat3x4_vec3(matmul_mat3x4_mat3x4(skeleton->bone_transforms[vert_bone_idx], skeleton->inv_bone_rest_transforms[vert_bone_idx]), vert_rest_pos);
+                // vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
+                // vec3_t vert_bone_pos = vert_rest_pos;
+                vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+                total_weight += vert_bone_weight;
+            }
+            // break; // FIXME - Stop at first bone
         }
-        // if(model->vert_bone_idxs[4*i+1] >= 0) {
-        //     int vert_bone_idx = model->vert_bone_idxs[4*i+1];
-        //     float vert_bone_weight = model->vert_bone_weights[4*i+1];
-        //     vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_pos);
-        //     vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
-        // }
-        // if(model->vert_bone_idxs[4*i+2] >= 0) {
-        //     int vert_bone_idx = model->vert_bone_idxs[4*i+2];
-        //     float vert_bone_weight = model->vert_bone_weights[4*i+2];
-        //     vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_pos);
-        //     vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
-        // }
-        // if(model->vert_bone_idxs[4*i+3] >= 0) {
-        //     int vert_bone_idx = model->vert_bone_idxs[4*i+3];
-        //     float vert_bone_weight = model->vert_bone_weights[4*i+3];
-        //     vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_pos);
-        //     vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
-        // }
 
         model->verts[i].x = vert_pos.x / total_weight;
         model->verts[i].y = vert_pos.y / total_weight;
