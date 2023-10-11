@@ -629,6 +629,10 @@ typedef struct skeletal_model_s {
     vec3_t *bone_rest_pos;
     quat_t *bone_rest_rot;
     vec3_t *bone_rest_scale;
+    // The per-bone transform that takes us from rest-pose model-space to bone local space
+    // These are static, so compute them once
+    mat3x4_t *inv_bone_rest_transforms;
+    
 
 
     // Animation frames data
@@ -669,10 +673,6 @@ typedef struct skeletal_skeleton_s {
     // Holds the 3x3 inverse-transpose of the above transform
     // Used to transform normals from rest pose to current pose
     mat3x3_t *bone_normal_transforms;
-    // Holds the 3x4 rest pose transform for each bone TODO - Should stash this in the model? FIXME - Do we even need this?
-    // mat3x4_t *bone_rest_transforms;
-    // Holds the inverted 3x4 rest pose transform for each bone TODO - Should stash this in the model?
-    mat3x4_t *inv_bone_rest_transforms;
 } skeletal_skeleton_t;
 
 
@@ -750,8 +750,6 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
     log_printf("build_skeleton. frametime: %f, (%d, %d, %f)\n", frametime, frame1_idx, frame2_idx, lerpfrac);
 
 
-    // TODO - Loop through bones, building up model-space bone transforms
-    // FIXME - Do we need to use the bone rest positions for anything? or do they just get replaced?
 
     for(uint32_t i = 0; i < source_model->n_bones; i++) {
         vec3_t frame1_pos = source_model->frames_bone_pos[source_model->n_bones * frame1_idx + i];
@@ -765,66 +763,16 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
         vec3_t bone_local_pos = lerp_vec3(frame1_pos, frame2_pos, lerpfrac);
         quat_t bone_local_rot = slerp_quat(frame1_rot, frame2_rot, lerpfrac);
         vec3_t bone_local_scale = lerp_vec3(frame1_scale, frame2_scale, lerpfrac);
-        mat3x4_t bone_local_transform = translate_rotate_scale_mat3x4(bone_local_pos, bone_local_rot, bone_local_scale);
+        // Current pose bone-space transform (relative to parent)
+        skeleton->bone_transforms[i] = translate_rotate_scale_mat3x4(bone_local_pos, bone_local_rot, bone_local_scale);
 
-
-
-
-
-
-        // ------------–------------–------------–------------–------------–---
-        // Calculate the inverse rest pose transform for this bone:
-        // TODO - Calculate this once at load and stash it
-        // ------------–------------–------------–------------–------------–---
-        // vec3_t bone_rest_local_pos = source_model->bone_rest_pos[i];
-        // quat_t bone_rest_local_rot = source_model->bone_rest_rot[i];
-        // vec3_t bone_rest_local_scale = source_model->bone_rest_scale[i];
-        // ------------–------------–------------–------------–------------–---
-        // Bone's local rest pose transform (relative to parent space)
-        
-        // ----------------------------------------
-        // Build transform that maps bone local-space to model-space
-        // ----------------------------------------
-        mat3x4_t bone_rest_model_transform = identity_mat3x4();
-        int bone_idx = i;
-        // log_printf("==== bone: %d ====\n", bone_idx);
-        while(bone_idx >= 0) {
-            // Find this bone's rest pose transform relative to its parent. Concat it
-            bone_rest_model_transform = matmul_mat3x4_mat3x4(
-                translate_rotate_scale_mat3x4(
-                    source_model->bone_rest_pos[bone_idx],
-                    source_model->bone_rest_rot[bone_idx],
-                    source_model->bone_rest_scale[bone_idx]
-                ),
-                bone_rest_model_transform
-            );
-            bone_idx = skeleton->model->bone_parent_idx[bone_idx];
-        }
-        mat3x4_t inv_bone_rest_model_transform = invert_mat3x4(bone_rest_model_transform);
-        skeleton->inv_bone_rest_transforms[i] = inv_bone_rest_model_transform;
-        // FIXME - Is this relative to parent? or is the rest pose model-space?
-        // FIXME - I think it's gonna' be in local-space... if so, need to compute and stash these as we'll need the parent's rest pose
-
-
-        // Build rest model-space -> posed model-space transform for this bone
-        mat3x4_t bone_model_transform;
-        mat3x3_t bone_model_normal_transform;
-
+        // If we have a parent, concat parent transform to get model-space transform
         int parent_bone_idx = skeleton->model->bone_parent_idx[i];
         if(parent_bone_idx >= 0) {
-            mat3x4_t parent_bone_model_transform = skeleton->bone_transforms[parent_bone_idx];
-            // Go from rest-model space -> bone local space -> parent posed local space -> posed model space
-            bone_model_transform = matmul_mat3x4_mat3x4( skeleton->bone_transforms[parent_bone_idx], bone_local_transform );
+            skeleton->bone_transforms[i] = matmul_mat3x4_mat3x4( skeleton->bone_transforms[parent_bone_idx], skeleton->bone_transforms[i] );
         }
-        else {
-            // Go from rest-model space -> bone local space -> parent posed local space -> posed model space
-            bone_model_transform = bone_local_transform;
-            // bone_model_transform = matmul_mat3x4_mat3x4( bone_local_transform, inv_bone_rest_model_transform);
-        }
+        // If we don't have a parent, the bone-space transform _is_ the model-space transform
 
-        // Invert-transpose the upper-left 3x3 matrix to get the transform that should be applied to vertex normals
-        // bone_model_normal_transform = transpose_mat3x3(invert_mat3x3(get_mat3x4_mat3x3(bone_model_transform)));
-        skeleton->bone_transforms[i] = bone_model_transform;
 
 
 
@@ -840,7 +788,9 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
     // Now that all bone transforms have been computed for the current pose, multiply in the inverse rest pose transforms
     // These transforms will take the vertices from model-space to each bone's local-space:
     for(uint32_t i = 0; i < source_model->n_bones; i++) {
-        skeleton->bone_transforms[i] = matmul_mat3x4_mat3x4(skeleton->bone_transforms[i], skeleton->inv_bone_rest_transforms[i]);
+        skeleton->bone_transforms[i] = matmul_mat3x4_mat3x4(skeleton->bone_transforms[i], skeleton->model->inv_bone_rest_transforms[i]);
+        // Invert-transpose the upper-left 3x3 matrix to get the transform that should be applied to vertex normals
+        skeleton->bone_normal_transforms[i] = transpose_mat3x3(invert_mat3x3(get_mat3x4_mat3x3(skeleton->bone_transforms[i])));
     }
 
 
@@ -1299,8 +1249,32 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     }
 
 
+    // Build the transform that takes us from model-space to each bone's bone-space for the rest pose.
+    // This is static, so compute once and cache
+    // First build the bone-space --> model-space transform for each bone (We will invert it later)
+    skel_model->inv_bone_rest_transforms = (mat3x4_t*) malloc(sizeof(mat3x4_t) * skel_model->n_bones);
+    for(uint32_t i = 0; i < skel_model->n_bones; i++) {
+        // Rest bone-space transform (relative to parent)
+        skel_model->inv_bone_rest_transforms[i] = translate_rotate_scale_mat3x4(
+            skel_model->bone_rest_pos[i],
+            skel_model->bone_rest_rot[i],
+            skel_model->bone_rest_scale[i]
+        );
 
+        // If we have a parent, concat parent transform to get model-space transform
+        int parent_bone_idx = skel_model->bone_parent_idx[i];
+        if(parent_bone_idx >= 0) {
+            skel_model->inv_bone_rest_transforms[i] = matmul_mat3x4_mat3x4( skel_model->inv_bone_rest_transforms[parent_bone_idx], skel_model->inv_bone_rest_transforms[i]);
+        }
+        // If we don't have a parent, the bone-space transform _is_ the model-space transform
+    }
+    // Next, invert the transforms to get the model-space --> bone-space transform
+    for(uint32_t i = 0; i < skel_model->n_bones; i++) {
+        skel_model->inv_bone_rest_transforms[i] = invert_mat3x4(skel_model->inv_bone_rest_transforms[i]);
+    }
     // --------------------------------------------------
+
+
     // --------------------------------------------------
     // Parse all frames (poses)
     // --------------------------------------------------
