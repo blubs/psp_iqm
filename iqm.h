@@ -577,6 +577,7 @@ typedef struct iqm_ext_fte_skin_meshskin_s {
 typedef struct vertex_s {
     float u, v;
     uint32_t color;
+    float nor_x, nor_y, nor_z;
     float x,y,z;
 } vertex_t;
 
@@ -604,6 +605,7 @@ typedef struct skeletal_model_s {
     // List of all mesh vertices
     uint32_t n_verts;
     vec3_t *vert_rest_positions; // Contains the rest position of all vertices
+    vec3_t *vert_rest_normals; // Contains the rest normals of all vertices
     // Contains the drawn vertex struct.
     // The vertex positions in this array are updated whenever a skeleton pose is applied via `apply_skeleton_pose`
     vertex_t *verts = nullptr;
@@ -685,7 +687,6 @@ skeletal_skeleton_t *create_skeleton(skeletal_model_t *model) {
     skeleton->model = model;
     skeleton->bone_transforms = (mat3x4_t*) malloc(sizeof(mat3x4_t) * skeleton->model->n_bones);
     skeleton->bone_normal_transforms = (mat3x3_t*) malloc(sizeof(mat3x3_t) * skeleton->model->n_bones);
-    // TODO - allocate memory for other fields in the skeleton to store bone current pose matrices
     return skeleton;
 }
 
@@ -751,6 +752,7 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
 
 
 
+    // Build the transform that takes us from model-space to each bone's bone-space for the current pose.
     for(uint32_t i = 0; i < source_model->n_bones; i++) {
         vec3_t frame1_pos = source_model->frames_bone_pos[source_model->n_bones * frame1_idx + i];
         vec3_t frame2_pos = source_model->frames_bone_pos[source_model->n_bones * frame2_idx + i];
@@ -812,8 +814,10 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
     // Apply skeleton pose to all vertices
     for(uint32_t i = 0; i < model->n_verts; i++) {
         vec3_t vert_rest_pos = model->vert_rest_positions[i];
+        vec3_t vert_rest_nor = model->vert_rest_normals[i];
         // Accumulate final vertex position here to calculate weighted sum
         vec3_t vert_pos = { 0.0f, 0.0f, 0.0f};
+        vec3_t vert_nor = { 0.0f, 0.0f, 0.0f};
         // Accumulate weighted sum total here
         float total_weight = 0.0f;
 
@@ -822,22 +826,21 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
             int vert_bone_idx = model->vert_bone_idxs[4*i + j];
             if(vert_bone_idx >= 0) {
                 float vert_bone_weight = model->vert_bone_weights[4*i + j];
-                // vert_bone_weight = 1.0f;
-                // vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->inv_bone_rest_transforms[vert_bone_idx], vert_rest_pos);
                 vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
-                // vec3_t vert_bone_pos = mul_mat3x4_vec3(matmul_mat3x4_mat3x4(skeleton->bone_transforms[vert_bone_idx], skeleton->inv_bone_rest_transforms[vert_bone_idx]), vert_rest_pos);
-                // vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
-                // vec3_t vert_bone_pos = vert_rest_pos;
+                vec3_t vert_bone_nor = mul_mat3x3_vec3(skeleton->bone_normal_transforms[vert_bone_idx], vert_rest_nor);
                 vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+                vert_nor = add_vec3( vert_nor, mul_float_vec3( vert_bone_weight, vert_bone_nor));
                 total_weight += vert_bone_weight;
             }
-            // break; // FIXME - Stop at first bone
         }
 
         model->verts[i].x = vert_pos.x / total_weight;
         model->verts[i].y = vert_pos.y / total_weight;
         model->verts[i].z = vert_pos.z / total_weight;
-        // TODO - Update / write vertex normals
+        model->verts[i].nor_x = vert_nor.x / total_weight;
+        model->verts[i].nor_y = vert_nor.y / total_weight;
+        model->verts[i].nor_z = vert_nor.z / total_weight;
+        // TODO - Write vertex tangents?
     }
 
     // TODO - I should error out if the skeleton's model is not `model`
@@ -857,17 +860,6 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
     // TODO - The core idea is that shared bones are used, all others ignored.
 
 
-    // TODO - Transform the normals and set them as well.
-
-
-    // TODO - Compute and cache 3x4 rest pose inverse...
-    // TODO - Does this need to be a 4x4? What shape does the inverse take?
-    // TODO - When do we need the parent'bone's inverse rest pose?
-    // Final pose =
-    //  weight_a * (bone_a * inv_rest_pose_a * vert)
-    //  + weight_b * (bone_b * inv_rest_pose_b * vert)
-    //  + weight_c * (bone_c * inv_rest_pose_c * vert)
-    // 
 }
 
 
@@ -1139,6 +1131,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     skel_model->n_verts = iqm_header->n_verts;
     skel_model->verts = (vertex_t*) malloc(sizeof(vertex_t) * skel_model->n_verts);
     skel_model->vert_rest_positions = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_verts);
+    skel_model->vert_rest_normals = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_verts);
     skel_model->n_meshes = iqm_header->n_meshes;
     skel_model->meshes = (skeletal_mesh_t*) malloc(sizeof(skeletal_mesh_t) * skel_model->n_meshes);
 
@@ -1149,9 +1142,11 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // ------------------------------------------------------------------------
     vec3_t default_vert = {0,0,0};
     vec2_t default_uv = {0,0};
+    vec3_t default_nor = {0,0,1.0f};
 
     iqm_parse_float_array(iqm_data, iqm_verts_pos, (float*) skel_model->vert_rest_positions, skel_model->n_verts, 3, (float*) &default_vert);
     iqm_parse_float_array(iqm_data, iqm_verts_uv, (float*) verts_uv, skel_model->n_verts, 2, (float*) &default_uv);
+    iqm_parse_float_array(iqm_data, iqm_verts_nor, (float*) skel_model->vert_rest_normals, skel_model->n_verts, 3, (float*) &default_nor);
 
 
     skel_model->vert_bone_weights = (float*) malloc(sizeof(float) * 4 * skel_model->n_verts);
@@ -1173,6 +1168,9 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
         skel_model->verts[i].v = verts_uv[i].y;
         // skel_model->verts[i].color = 0xffffffff;
         skel_model->verts[i].color = 0x00000000;
+        skel_model->verts[i].nor_x = skel_model->vert_rest_normals[i].x;
+        skel_model->verts[i].nor_y = skel_model->vert_rest_normals[i].y;
+        skel_model->verts[i].nor_z = skel_model->vert_rest_normals[i].z;
         // TODO - Parse other potentially optional vertex attribute arrays
     }
     // ------------------------------------------------------------------------
