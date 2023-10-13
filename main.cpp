@@ -153,7 +153,19 @@ int main(int argc, char *argv[]) {
     // int iqm_version = load_iqm_file("assets/zombie_with_anims.iqm");
     // iqm_header_t *iqm_header = load_iqm_file("assets/zombie_with_anims.iqm");
 
-    skeletal_model_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
+    // skeletal_model_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
+    // skeletal_model_t *iqm_model = load_iqm_file("assets/test_model.iqm");
+    // skeletal_model_t *iqm_model = load_iqm_file("assets/test_model_2.iqm");
+    skeletal_model_t *zombie_model = load_iqm_file("assets/zombie_mesh.iqm");
+    skeletal_model_t *zombie_anim_walk1 = load_iqm_file("assets/anim1.iqm");
+    skeletal_model_t *zombie_anim_walk2 = load_iqm_file("assets/anim2.iqm");
+    skeletal_model_t *iqm_model = zombie_model;
+    float scale = 0.1f;
+    // float scale = 1.0f;
+
+    float rot_speed = 0.32f;
+    // float rot_speed = 1.0f;
+
     skeletal_skeleton_t *iqm_skeleton = create_skeleton(iqm_model);
     int framegroup_idx = 0;
 
@@ -196,10 +208,9 @@ int main(int argc, char *argv[]) {
         ScePspFVector3 model_pos = {0,0,-10.0f};
         // ScePspFVector3 model_rot = {frame * 0.79f * (GU_PI/180.0f), frame * 0.98f * (GU_PI/180.0f), frame * 1.32f * (GU_PI/180.0f)};
         // ScePspFVector3 model_rot = {0, frame * 1.32f * (GU_PI/180.0f), 0};
-        ScePspFVector3 model_rot = {-90 * (GU_PI/180.0f), 0, (frame * 0.32f + -90) * (GU_PI/180.0f)};
+        ScePspFVector3 model_rot = {-90 * (GU_PI/180.0f), 0, (frame * rot_speed + -90) * (GU_PI/180.0f)};
         // ScePspFVector3 model_rot = {-90 * (GU_PI/180.0f), 0, (-90) * (GU_PI/180.0f)};
         // float scale = (sin((float)frame / 10.0f) + 1.0f) * 100;
-        float scale = 0.1f;
         ScePspFVector3 model_scale = {scale,scale,scale};
         sceGumTranslate(&model_pos);
         sceGumScale(&model_scale);
@@ -225,7 +236,8 @@ int main(int argc, char *argv[]) {
         // --------------------------------------------------------------------
         frametime = (frame / 60.0f); // 60 FPS animation
         // Set the skeleton's current pose matrices from animation data
-        build_skeleton( iqm_skeleton, iqm_model, framegroup_idx, frametime);
+        // build_skeleton( iqm_skeleton, iqm_model, framegroup_idx, frametime);
+        build_skeleton( iqm_skeleton, zombie_anim_walk2, framegroup_idx, frametime);
         // Process FTE animation events elapsed between the last and current frame
         // process_anim_events( iqm_model, framegroup_idx, prev_frametime, cur_frametime, event_callback);
         // Transform the model vertices to model-space using the skeleton's current pose matrices
@@ -245,7 +257,7 @@ int main(int argc, char *argv[]) {
             unsigned int mesh_first_vert = iqm_model->meshes[i].first_vert;
             // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
             // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
-            sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_tri_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
+            sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_tri_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
             // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, 0, model_verts + mesh_first_vert);
             // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, 0, model_verts + mesh_first_vert);
             // sceGumDrawArray(GU_POINTS,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, submesh_n_verts, submesh_tri_vert_idxs, model_verts + submesh_first_vert);
@@ -284,7 +296,6 @@ int main(int argc, char *argv[]) {
         pspDebugScreenSetOffset((int) cur_draw_buffer);
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
         // pspDebugScreenSetOffset((int) display_buffer);
-
 
         pspDebugScreenSetXY(1,3);
         int vert_idx = frame % (iqm_model->n_verts);
