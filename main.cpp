@@ -156,17 +156,26 @@ int main(int argc, char *argv[]) {
     // skeletal_model_t *iqm_model = load_iqm_file("assets/zombie_with_anims.iqm");
     // skeletal_model_t *iqm_model = load_iqm_file("assets/test_model.iqm");
     // skeletal_model_t *iqm_model = load_iqm_file("assets/test_model_2.iqm");
+    log_printf("Loading zombie mesh\n");
     skeletal_model_t *zombie_model = load_iqm_file("assets/zombie_mesh.iqm");
-    skeletal_model_t *zombie_anim_walk1 = load_iqm_file("assets/anim1.iqm");
-    skeletal_model_t *zombie_anim_walk2 = load_iqm_file("assets/anim2.iqm");
+    log_printf("Loading zombie anim 1\n");
+    skeletal_model_t *zombie_anim_walk1 = load_iqm_file("assets/anim1_v2.iqm");
+    log_printf("Loading zombie anim 2\n");
+    skeletal_model_t *zombie_anim_walk2 = load_iqm_file("assets/anim2_v2.iqm");
+    log_printf("Done loading IQM assets\n");
     skeletal_model_t *iqm_model = zombie_model;
+    skeletal_model_t *iqm_anim = zombie_anim_walk1;
+    // skeletal_model_t *iqm_anim = zombie_anim_walk2;
     float scale = 0.1f;
     // float scale = 1.0f;
 
     float rot_speed = 0.32f;
     // float rot_speed = 1.0f;
 
+
+    log_printf("Creating skeleton for zombie mesh\n");
     skeletal_skeleton_t *iqm_skeleton = create_skeleton(iqm_model);
+    log_printf("Done creating skeleton for zombie mesh\n");
     int framegroup_idx = 0;
 
 
@@ -184,11 +193,10 @@ int main(int argc, char *argv[]) {
         sceGuStart(GU_DIRECT, display_list);
         // Smoothly fade between 0 and 1:
         // float fade = 0.5f * (sin((float)frame / 10.0f) + 1.0f);
-        float fade = 0;
+        // float fade = 0;
+        float fade = 1.0;
         sceGuClearColor((int)(0x0000ff * fade));
         sceGuClearDepth(0);
-        // sceGuClear(GU_DEPTH_BUFFER_BIT);
-        // sceGuClear(GU_COLOR_BUFFER_BIT);
         sceGuClear(GU_COLOR_BUFFER_BIT | GU_DEPTH_BUFFER_BIT);
 
         // --------------------------------------------------------------------
@@ -235,13 +243,20 @@ int main(int argc, char *argv[]) {
         // Updating the model's animation / drawing state
         // --------------------------------------------------------------------
         frametime = (frame / 60.0f); // 60 FPS animation
+        // frametime = 0;
         // Set the skeleton's current pose matrices from animation data
+
+
         // build_skeleton( iqm_skeleton, iqm_model, framegroup_idx, frametime);
-        build_skeleton( iqm_skeleton, zombie_anim_walk2, framegroup_idx, frametime);
+        // log_printf("Building skeleton with anim.\n");
+        build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+        // log_printf("Done building skeleton with anim.\n");
         // Process FTE animation events elapsed between the last and current frame
         // process_anim_events( iqm_model, framegroup_idx, prev_frametime, cur_frametime, event_callback);
         // Transform the model vertices to model-space using the skeleton's current pose matrices
+        // log_printf("Applying skeleton to mesh.\n");
         apply_skeleton_pose( iqm_skeleton, iqm_model);
+        // log_printf("Done applying skeleton to mesh.\n");
         // --------------------------------------------------------------------
 
 

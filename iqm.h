@@ -633,6 +633,7 @@ typedef struct skeletal_model_s {
     vec3_t *bone_rest_scale;
     // The per-bone transform that takes us from rest-pose model-space to bone local space
     // These are static, so compute them once
+    mat3x4_t *bone_rest_transforms;
     mat3x4_t *inv_bone_rest_transforms;
     
 
@@ -675,6 +676,13 @@ typedef struct skeletal_skeleton_s {
     // Holds the 3x3 inverse-transpose of the above transform
     // Used to transform normals from rest pose to current pose
     mat3x3_t *bone_normal_transforms;
+
+    // anim_bone_idx[i] contains the ith skeleton bone's index in the animation model bone list last used to build the skeleton
+    // If anim_bone_idx[i] == -1, the skeleton's i-th bone was not found in the model's animation. This bone will not be animated.
+    int *anim_bone_idx;
+    // Contains a pointer to the last skeletal model we used to build the skeleton.
+    skeletal_model_t *prev_anim_model;
+
 } skeletal_skeleton_t;
 
 
@@ -687,6 +695,8 @@ skeletal_skeleton_t *create_skeleton(skeletal_model_t *model) {
     skeleton->model = model;
     skeleton->bone_transforms = (mat3x4_t*) malloc(sizeof(mat3x4_t) * skeleton->model->n_bones);
     skeleton->bone_normal_transforms = (mat3x3_t*) malloc(sizeof(mat3x3_t) * skeleton->model->n_bones);
+    skeleton->anim_bone_idx = (int*) malloc(sizeof(int) * skeleton->model->n_bones);
+    skeleton->prev_anim_model = nullptr;
     return skeleton;
 }
 
@@ -704,13 +714,40 @@ void process_anim_events(skeletal_model_t *model, int framegroup_idx, float star
 //
 // Sets a skeleton's current pose matrices using the animation data from `source_model`
 //
+//  skeleton -- Skeleton object to set current pose for
+//  source_model -- IQM model from which to pull bone animation data. This need not be the same as skeleton's.
+//  framegroup_idx -- Framegroup index for framegroups in `source_model`
+//  frametime -- Time into the framegroup animation in `source_model`
+//
 void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_model, int framegroup_idx, float frametime) {
 
     if(skeleton->model != source_model) {
-        // FIXME - If this happens, need to build model pose data from model animation data
-        // FIXME - Then apply model pose to skeleton pose by bone name
-        return;
+        // If we already found the mapping for this model, skip it
+        if(skeleton->prev_anim_model != source_model) {
+            skeleton->prev_anim_model = source_model;
+
+            for(uint32_t i = 0; i < skeleton->model->n_bones; i++) {
+                // Default to -1, indicating that no bones have been found yet.
+                skeleton->anim_bone_idx[i] = -1;
+                for(uint32_t j = 0; j < source_model->n_bones; j++) {
+                    if(!strcmp( skeleton->model->bone_name[i], source_model->bone_name[j])) {
+                        skeleton->anim_bone_idx[i] = j;
+                        break;
+                    }
+                }
+            }
+        }
     }
+    else {
+        // If we already found the mapping for this model, skip it
+        if(skeleton->prev_anim_model != source_model) {
+            skeleton->prev_anim_model = source_model;
+            for(uint32_t i = 0; i < skeleton->model->n_bones; i++) {
+                skeleton->anim_bone_idx[i] = i;
+            }
+        }
+    }
+
 
     if(framegroup_idx < 0 || framegroup_idx >= source_model->n_framegroups) {
         return;
@@ -753,13 +790,20 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
 
 
     // Build the transform that takes us from model-space to each bone's bone-space for the current pose.
-    for(uint32_t i = 0; i < source_model->n_bones; i++) {
-        vec3_t frame1_pos = source_model->frames_bone_pos[source_model->n_bones * frame1_idx + i];
-        vec3_t frame2_pos = source_model->frames_bone_pos[source_model->n_bones * frame2_idx + i];
-        quat_t frame1_rot = source_model->frames_bone_rot[source_model->n_bones * frame1_idx + i];
-        quat_t frame2_rot = source_model->frames_bone_rot[source_model->n_bones * frame2_idx + i];
-        vec3_t frame1_scale = source_model->frames_bone_scale[source_model->n_bones * frame1_idx + i];
-        vec3_t frame2_scale = source_model->frames_bone_scale[source_model->n_bones * frame2_idx + i];
+    for(uint32_t i = 0; i < skeleton->model->n_bones; i++) {
+        const int anim_bone_idx = skeleton->anim_bone_idx[i];
+        // If this bone is not present in the model's animation data, skip it.
+        if(anim_bone_idx == -1) {
+            skeleton->bone_transforms[i] = skeleton->model->bone_rest_transforms[i];
+            continue;
+        }
+
+        vec3_t frame1_pos = source_model->frames_bone_pos[source_model->n_bones * frame1_idx + anim_bone_idx];
+        vec3_t frame2_pos = source_model->frames_bone_pos[source_model->n_bones * frame2_idx + anim_bone_idx];
+        quat_t frame1_rot = source_model->frames_bone_rot[source_model->n_bones * frame1_idx + anim_bone_idx];
+        quat_t frame2_rot = source_model->frames_bone_rot[source_model->n_bones * frame2_idx + anim_bone_idx];
+        vec3_t frame1_scale = source_model->frames_bone_scale[source_model->n_bones * frame1_idx + anim_bone_idx];
+        vec3_t frame2_scale = source_model->frames_bone_scale[source_model->n_bones * frame2_idx + anim_bone_idx];
 
         // Get local bone transforms (relative to parent space)
         vec3_t bone_local_pos = lerp_vec3(frame1_pos, frame2_pos, lerpfrac);
@@ -775,16 +819,6 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
         }
         // If we don't have a parent, the bone-space transform _is_ the model-space transform
 
-
-
-
-
-
-
-
-
-
-
     }
 
     // Now that all bone transforms have been computed for the current pose, multiply in the inverse rest pose transforms
@@ -794,13 +828,10 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
         // Invert-transpose the upper-left 3x3 matrix to get the transform that should be applied to vertex normals
         skeleton->bone_normal_transforms[i] = transpose_mat3x3(invert_mat3x3(get_mat3x4_mat3x3(skeleton->bone_transforms[i])));
     }
-
-
-
 }
 
 // 
-// Applies a `skeeltal_skeleton_t` object's current built pose to the model. 
+// Applies a `skeletal_skeleton_t` object's current built pose to the model. 
 // Populates the mesh's `verts` array with the final model-space vertex locations.
 // 
 void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model) {
@@ -843,8 +874,10 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
         // TODO - Write vertex tangents?
     }
 
+
     // TODO - I should error out if the skeleton's model is not `model`
     // TODO   Should I just get rid of 
+
 
     // TODO - Should a model be stateful? Or should it be a shared reused asset across all instances?
     // Depends, in dquake, where are the interpolated vertices stored? Are they stored in the model?
@@ -1172,7 +1205,8 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
         skel_model->verts[i].nor_y = skel_model->vert_rest_normals[i].y;
         skel_model->verts[i].nor_z = skel_model->vert_rest_normals[i].z;
         // TODO - Parse other potentially optional vertex attribute arrays
-    }
+
+    free(verts_uv);
     // ------------------------------------------------------------------------
 
 
@@ -1250,10 +1284,11 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // Build the transform that takes us from model-space to each bone's bone-space for the rest pose.
     // This is static, so compute once and cache
     // First build the bone-space --> model-space transform for each bone (We will invert it later)
+    skel_model->bone_rest_transforms = (mat3x4_t*) malloc(sizeof(mat3x4_t) * skel_model->n_bones);
     skel_model->inv_bone_rest_transforms = (mat3x4_t*) malloc(sizeof(mat3x4_t) * skel_model->n_bones);
     for(uint32_t i = 0; i < skel_model->n_bones; i++) {
         // Rest bone-space transform (relative to parent)
-        skel_model->inv_bone_rest_transforms[i] = translate_rotate_scale_mat3x4(
+        skel_model->bone_rest_transforms[i] = translate_rotate_scale_mat3x4(
             skel_model->bone_rest_pos[i],
             skel_model->bone_rest_rot[i],
             skel_model->bone_rest_scale[i]
@@ -1262,13 +1297,13 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
         // If we have a parent, concat parent transform to get model-space transform
         int parent_bone_idx = skel_model->bone_parent_idx[i];
         if(parent_bone_idx >= 0) {
-            skel_model->inv_bone_rest_transforms[i] = matmul_mat3x4_mat3x4( skel_model->inv_bone_rest_transforms[parent_bone_idx], skel_model->inv_bone_rest_transforms[i]);
+            skel_model->bone_rest_transforms[i] = matmul_mat3x4_mat3x4( skel_model->bone_rest_transforms[parent_bone_idx], skel_model->bone_rest_transforms[i]);
         }
         // If we don't have a parent, the bone-space transform _is_ the model-space transform
     }
     // Next, invert the transforms to get the model-space --> bone-space transform
     for(uint32_t i = 0; i < skel_model->n_bones; i++) {
-        skel_model->inv_bone_rest_transforms[i] = invert_mat3x4(skel_model->inv_bone_rest_transforms[i]);
+        skel_model->inv_bone_rest_transforms[i] = invert_mat3x4(skel_model->bone_rest_transforms[i]);
     }
     // --------------------------------------------------
 
@@ -1276,8 +1311,10 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // --------------------------------------------------
     // Parse all frames (poses)
     // --------------------------------------------------
-
     skel_model->n_frames = iqm_header->n_frames;
+    log_printf("\tBones: %d\n",skel_model->n_bones);
+    log_printf("\tFrames: %d\n",iqm_header->n_frames);
+    log_printf("\tPoses: %d\n",iqm_header->n_poses);
     skel_model->frames_bone_pos = (vec3_t *) malloc(sizeof(vec3_t) * skel_model->n_bones * skel_model->n_frames);
     skel_model->frames_bone_rot = (quat_t *) malloc(sizeof(quat_t) * skel_model->n_bones * skel_model->n_frames);
     skel_model->frames_bone_scale = (vec3_t *) malloc(sizeof(vec3_t) * skel_model->n_bones * skel_model->n_frames);
@@ -1337,6 +1374,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             skel_model->framegroup_loop[i] = iqm_framegroups[i].flags & (uint32_t) iqm_anim_flag::IQM_ANIM_FLAG_LOOP;
         }
     }
+    log_printf("\tParsed %d framegroups.\n", skel_model->n_framegroups);
     // --------------------------------------------------
 
 
@@ -1376,6 +1414,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             log_printf("\tmax_dist %d\n", iqm_fte_ext_mesh[i].max_dist); // LOD max distance
         }
     }
+    // --------------------------------------------------
 
 
     // --------------------------------------------------
