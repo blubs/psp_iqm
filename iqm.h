@@ -687,6 +687,458 @@ typedef struct skeletal_skeleton_s {
 
 
 
+
+
+
+// 
+// Returns true if `bone_idx` is in list `bone_list`
+// 
+bool bone_in_list(uint8_t bone_idx, const uint8_t *bone_list, const int n_bones) {
+    for(int i = 0; i < n_bones; i++) {
+        if(bone_idx == bone_list[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+//
+// Returns true if list `bone_list_a` is a subset of `bone_list_b`
+//
+bool bone_list_is_subset(const uint8_t *bone_list_a, const int bone_list_a_n_bones, const uint8_t *bone_list_b, const int bone_list_b_n_bones) {
+    for(int i = 0; i < bone_list_a_n_bones; i++) {
+        bool bone_in_list = false;
+        for(int j = 0; j < bone_list_b_n_bones; j++) {
+            if(bone_list_a[i] == bone_list_b[j]) {
+                bone_in_list = true;
+                break;
+            }
+        }
+        // If any bone was missing from list b, not a subset
+        if(!bone_in_list) {
+            return false;
+        }
+    }
+    // All `a` bones were found in `b`, `a` is a subset of `b`.
+    return true;
+}
+
+//
+// Returns the number of bones that are in `bone_list_a` but not in `bone_list_b`
+//  i.e. len(set(bone_list_a) - set(bone_list_b))
+//
+int bone_list_set_difference(const uint8_t *bone_list_a, const int bone_list_a_n_bones, const uint8_t *bone_list_b, const int bone_list_b_n_bones) {
+    int n_missing_bones = 0;
+
+    for(int i = 0; i < bone_list_a_n_bones; i++) {
+        bool bone_in_list = false;
+        for(int j = 0; j < bone_list_b_n_bones; j++) {
+            if(bone_list_a[i] == bone_list_b[j]) {
+                bone_in_list = true;
+                break;
+            }
+        }
+        // If bone was missing from list b, count it
+        if(!bone_in_list) {
+            n_missing_bones += 1;
+        }
+    }
+    return n_missing_bones;
+}
+
+//
+// Performs the set union of bones in both `bone_list_a` and `bone_list_b`
+// Writes the union into `bone_list_a`
+//  i.e. len(set(bone_list_a) + set(bone_list_b))
+//
+// WARNING: Assumes `bone_list_a` has the capacity for the union of both lists.
+//
+int bone_list_set_union(uint8_t *bone_list_a, int bone_list_a_n_bones, const uint8_t *bone_list_b, const int bone_list_b_n_bones) {
+    for(int i = 0; i < bone_list_b_n_bones; i++) {
+        bool bone_already_in_a = false;
+
+        for(int j = 0; j < bone_list_a_n_bones; j++) {
+            if(bone_list_a[j] == bone_list_b[i]) {
+                bone_already_in_a = true;
+                break;
+            }
+        }
+        if(bone_already_in_a) {
+            continue;
+        }
+
+        bone_list_a[bone_list_a_n_bones] = bone_list_b[i];
+        bone_list_a_n_bones += 1;
+    }
+    return bone_list_a_n_bones;
+}
+
+
+
+// 
+// Splits each mesh in `skel_model` into submeshes that reference no more than 8 bones.
+//
+void submesh_skeletal_model(skeletal_model_t *skel_model) {
+    const int VERT_BONES = 4;
+    const int TRI_VERTS = 3;
+    const int SUBMESH_BONES = 8;
+    log_printf("=========== Submesh started =============\n");
+
+
+    // For each mesh, break it up into submeshes
+    for(int i = 0; i < skel_model->n_meshes; i++) {
+
+        // log_printf("Mesh triangles: %d\n",skel_model->meshes[i].n_tris);
+        // if(skel_model->meshes[i].n_tris < 50) {
+        //     log_printf("///////////// Debugging mesh triangles:\n");
+
+        //     for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+        //         log_printf("\tTri %d vert indices: ", tri_idx);
+        //         for(int tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++ ) {
+        //             log_printf("%d, ", skel_model->meshes[i].tri_verts[(tri_idx * TRI_VERTS) + tri_vert_idx]);
+        //         }
+        //         log_printf("\n");
+        //     }
+        // }
+        // continue;
+
+        // --------------------------------------------------------------------
+        // Build the set of bones referenced by each triangle
+        // --------------------------------------------------------------------
+        uint8_t *tri_n_bones = (uint8_t*) malloc(sizeof(uint8_t) * skel_model->meshes[i].n_tris); // Contains the number of bones that the i-th triangle references
+        uint8_t *tri_bones = (uint8_t*) malloc(sizeof(uint8_t) * TRI_VERTS * VERT_BONES * skel_model->meshes[i].n_tris); // Contains the list of bones referenced by the i-th triangle
+
+
+        for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+            // Initialize this triangle's bone list to 0s
+            for(int tri_bone_idx = 0; tri_bone_idx < TRI_VERTS * VERT_BONES; tri_bone_idx++) {
+                tri_bones[(tri_idx * TRI_VERTS * VERT_BONES) + tri_bone_idx] = 0;
+            }
+            tri_n_bones[tri_idx] = 0;
+
+            for(int tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++ ) {
+                int vert_idx = skel_model->meshes[i].tri_verts[(tri_idx * TRI_VERTS) + tri_vert_idx] + skel_model->meshes[i].first_vert;
+                // Loop through the vertex's referenced bones
+                for(int vert_bone_idx = 0; vert_bone_idx < VERT_BONES; vert_bone_idx++) {
+                    uint8_t bone_idx = skel_model->vert_bone_idxs[vert_idx * VERT_BONES + vert_bone_idx];
+                    float bone_weight = skel_model->vert_bone_weights[vert_idx * VERT_BONES + vert_bone_idx];
+
+                    if(bone_weight > 0) {
+                        // Verify the bone is not already in this triangle's bone list
+                        if(!bone_in_list(bone_idx, &tri_bones[tri_idx * TRI_VERTS * VERT_BONES], tri_n_bones[tri_idx])) {
+                            tri_bones[(tri_idx * TRI_VERTS * VERT_BONES) + tri_n_bones[tri_idx]] = bone_idx;
+                            tri_n_bones[tri_idx] += 1;
+                        }
+                    }
+                }
+            }
+        }
+        // --------------------------------------------------------------------
+
+
+        // // Debug print a few triangle bone lists:
+        // for(int j = 0; j < 10; j++) {
+        //     log_printf("Mesh: %d tri: %d bones (%d): ", i, j, tri_n_bones[j]);
+        //     for(int k = 0; k < tri_n_bones[j]; k++) {
+        //         log_printf("%d, ", tri_bones[j * TRI_VERTS * VERT_BONES + k]);
+        //     }
+        //     log_printf("\n");
+        // }
+        // break;
+
+        // --------------------------------------------------------------------
+        // Assign each triangle in the mesh to a submesh idx
+        // --------------------------------------------------------------------
+        int8_t *tri_submesh_idx = (int8_t*) malloc(sizeof(int8_t) * skel_model->meshes[i].n_tris); // Contains the set the i-th triangle belongs to
+        const int SET_DISCARD = -2; // Discarded triangles
+        const int SET_UNASSIGNED = -1; // Denotes unassigned triangles
+        for(int j = 0; j < skel_model->meshes[i].n_tris; j++) {
+            tri_submesh_idx[j] = SET_UNASSIGNED;
+        }
+
+        int cur_submesh_idx = -1;
+
+        while(true) {
+            // Find the unassigned triangle that uses the most bones:
+            int cur_tri = -1;
+            for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                // If this triangle isn't `UNASSIGNED`, skip it
+                if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
+                    continue;
+                }
+                // If we haven't found one yet, set it
+                if(cur_tri == -1) {
+                    cur_tri = tri_idx;
+                    continue;
+                }
+                // If this triangle references more bones, update cur_tri
+                if(tri_n_bones[tri_idx] > tri_n_bones[cur_tri]) {
+                    cur_tri = tri_idx;
+                }
+            }
+
+            // If we didn't find any triangles, stop submesh algorithm. We're done.
+            if(cur_tri == -1) {
+                break;
+            }
+
+            cur_submesh_idx += 1;
+            int cur_submesh_n_bones = 0;
+            uint8_t *cur_submesh_bones = (uint8_t*) malloc(sizeof(uint8_t) * SUBMESH_BONES);
+            log_printf("Creating submesh %d for mesh %d\n", cur_submesh_idx, i);
+
+            // Verify the triangle doesn't have more than the max bones allowed:
+            if(tri_n_bones[cur_tri] > SUBMESH_BONES) {
+                log_printf("Warning: Mesh %d Triangle %d references %d bones, which is more than the maximum allowed for any mesh (%d). Skipping triangle...\n", i, cur_tri, tri_n_bones[cur_tri], SUBMESH_BONES);
+                // Discard it
+                tri_submesh_idx[cur_tri] = SET_DISCARD;
+                continue;
+            }
+
+            // Add the triangle to the current submesh:
+            tri_submesh_idx[cur_tri] = cur_submesh_idx;
+
+            // Add the triangle's bones to the current submesh:
+            for(int submesh_bone_idx = 0; submesh_bone_idx < tri_n_bones[cur_tri]; submesh_bone_idx++) {
+                cur_submesh_bones[submesh_bone_idx] = tri_bones[(cur_tri * TRI_VERTS * VERT_BONES) + submesh_bone_idx];
+                cur_submesh_n_bones += 1;
+            }
+
+            log_printf("\tstart submesh bones (%d): [", cur_submesh_n_bones);
+            for(int submesh_bone_idx = 0; submesh_bone_idx < cur_submesh_n_bones; submesh_bone_idx++) {
+                log_printf("%d, ", cur_submesh_bones[submesh_bone_idx]);
+            }
+            log_printf("]\n");
+
+            // Add all unassigned triangles from the main mesh that references bones in this submesh's bone list
+            for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                // If this triangle isn't `UNASSIGNED`, skip it
+                if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
+                    continue;
+                }
+
+                // if(i == 0) {
+                //     log_printf("Mesh %d submesh %d checking tri %d\n",i,cur_submesh_idx,tri_idx);
+                //     log_printf("\tTri bones: (%d), ", tri_n_bones[tri_idx]);
+                //     for(int tri_bone_idx = 0; tri_bone_idx < tri_n_bones[tri_idx]; tri_bone_idx++) {
+                //         log_printf("%d,", tri_bones[(tri_idx * TRI_VERTS * VERT_BONES) + tri_bone_idx]);
+                //     }
+                //     log_printf("\n");
+                // }
+
+                // If this triangle's bones is not a subset of the current submesh bone list, skip it
+                if(!bone_list_is_subset(&tri_bones[tri_idx * TRI_VERTS * VERT_BONES], tri_n_bones[tri_idx], cur_submesh_bones, cur_submesh_n_bones)) {
+                    continue;
+                }
+
+                // Otherwise, it is a subset, add it to the current submesh
+                tri_submesh_idx[tri_idx] = cur_submesh_idx;
+            }
+
+
+            // Print how many triangles belong to the current submesh
+            int cur_submesh_n_tris = 0;
+            int n_assigned_tris = 0;
+            for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
+                    n_assigned_tris++;
+                }
+                if(tri_submesh_idx[tri_idx] == cur_submesh_idx) {
+                    cur_submesh_n_tris++;
+                }
+            }
+            log_printf("\tcur submesh (%d) n_tris: %d/%d, remaining unassigned: %d/%d\n", cur_submesh_idx, cur_submesh_n_tris, skel_model->meshes[i].n_tris, n_assigned_tris, skel_model->meshes[i].n_tris);
+
+
+            // Repeat until there are no unassigned triangles remaining:
+            while(true) {
+                // Get triangle with the minimum number of bones not in the current submesh bone list
+                cur_tri = -1;
+                int cur_tri_n_missing_bones = 0;
+                for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                    // If this triangle isn't `UNASSIGNED`, skip it
+                    if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
+                        continue;
+                    }
+                    // Count the number of bones referenced by this triangle that are not in the current submesh bone list
+                    int n_missing_bones = bone_list_set_difference(&tri_bones[tri_idx * TRI_VERTS * VERT_BONES], tri_n_bones[tri_idx], cur_submesh_bones, cur_submesh_n_bones);
+                    if(cur_tri == -1 || n_missing_bones < cur_tri_n_missing_bones) {
+                        cur_tri = tri_idx;
+                        cur_tri_n_missing_bones = n_missing_bones;
+                    }
+                }
+
+                // If no triangle found, stop. We're done.
+                if(cur_tri == -1) {
+                    log_printf("\tNo more unassigned triangles. Done with mesh.\n");
+                    break;
+                }
+
+                // If this triangle pushes us past the submesh-bone limit, we are done with this submesh. Move onto the next one.
+                if(cur_submesh_n_bones + cur_tri_n_missing_bones > SUBMESH_BONES) {
+                    log_printf("\tReached max number of bones allowed. Done with submesh.\n");
+                    break;
+                }
+
+                log_printf("\tNext loop using triangle: %d, missing bones: %d\n", cur_tri, cur_tri_n_missing_bones);
+
+
+                // Assign the triangle to the current submesh
+                tri_submesh_idx[cur_tri] = cur_submesh_idx;
+
+                // Add this triangle's bones to the current submesh list of bones
+                cur_submesh_n_bones = bone_list_set_union( cur_submesh_bones, cur_submesh_n_bones, &tri_bones[cur_tri * TRI_VERTS * VERT_BONES], tri_n_bones[cur_tri]);
+
+
+                log_printf("\tcur submesh bones (%d): [", cur_submesh_n_bones);
+                for(int submesh_bone_idx = 0; submesh_bone_idx < cur_submesh_n_bones; submesh_bone_idx++) {
+                    log_printf("%d, ", cur_submesh_bones[submesh_bone_idx]);
+                }
+                log_printf("]\n");
+
+
+                // Add all unassigned triangles from the main mesh that reference bones in this submesh's bone list
+                for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                    // If this triangle isn't `UNASSIGNED`, skip it
+                    if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
+                        continue;
+                    }
+
+                    // if(i == 0) {
+                    //     log_printf("Mesh %d submesh %d checking tri %d\n",i,cur_submesh_idx,tri_idx);
+                    //     log_printf("\tTri bones: (%d), ", tri_n_bones[tri_idx]);
+                    //     for(int tri_bone_idx = 0; tri_bone_idx < tri_n_bones[tri_idx]; tri_bone_idx++) {
+                    //         log_printf("%d,", tri_bones[(tri_idx * TRI_VERTS * VERT_BONES) + tri_bone_idx]);
+                    //     }
+                    //     log_printf("\n");
+                    // }
+
+                    // If this triangle's bones is not a subset of the current submesh bone list, skip it
+                    if(!bone_list_is_subset(&tri_bones[tri_idx * TRI_VERTS * VERT_BONES], tri_n_bones[tri_idx], cur_submesh_bones, cur_submesh_n_bones)) {
+                        continue;
+                    }
+
+                    // Otherwise, it is a subset, add it to the current submesh
+                    tri_submesh_idx[tri_idx] = cur_submesh_idx;
+                }
+
+                // Print how many triangles belong to the current submesh
+                cur_submesh_n_tris = 0;
+                n_assigned_tris = 0;
+                for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                    if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
+                        n_assigned_tris++;
+                    }
+                    if(tri_submesh_idx[tri_idx] == cur_submesh_idx) {
+                        cur_submesh_n_tris++;
+                    }
+                }
+                log_printf("\tDone adding new tris for cur triangle");
+                log_printf("\tcur submesh (%d) n_tris: %d/%d, total assigned: %d/%d\n", cur_submesh_idx, cur_submesh_n_tris, skel_model->meshes[i].n_tris, n_assigned_tris, skel_model->meshes[i].n_tris);
+            }
+
+            free(cur_submesh_bones);
+        }
+
+
+        int n_submeshes = cur_submesh_idx + 1;
+
+        for(int submesh_idx = 0; submesh_idx < n_submeshes; submesh_idx++) {
+            log_printf("Reconstructing submesh %d for mesh %d\n", submesh_idx, i);
+            // Count the number of triangles that have been assigned to this submesh
+            int submesh_tri_count = 0;
+            for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                if(tri_submesh_idx[tri_idx] == submesh_idx) {
+                    submesh_tri_count++;
+                }
+            }
+
+            // Allocate enough memory to fit submesh mesh triangle indices
+            uint16_t *submesh_mesh_tri_idxs = (uint16_t*) malloc(sizeof(uint16_t) * submesh_tri_count); // Indices into mesh list of triangles
+             // FIXME - Do we ever actually read this ^^^?
+
+            // Allocate enough memory to fit theoretical max amount of unique vertes this model can reference (given we know its triangle count)
+            uint16_t *submesh_mesh_vert_idxs = (uint16_t*) malloc(sizeof(uint16_t) * TRI_VERTS * submesh_tri_count); // Indices into mesh list of vertices
+            // Allocate enough memoery to fit 3 vertex indices per triangle
+            uint16_t *submesh_tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * TRI_VERTS * submesh_tri_count);
+            int submesh_n_tris = 0;
+            int submesh_n_verts = 0;
+
+            // ----------------------------------------------------------------
+            // Build this submesh's list of triangle indices, vertex list, and
+            // triangle vertex indices
+            // ----------------------------------------------------------------
+            for(int mesh_tri_idx = 0; mesh_tri_idx < skel_model->meshes[i].n_tris; mesh_tri_idx++) {
+                // Skip triangles that don't belong to this submesh
+                if(tri_submesh_idx[mesh_tri_idx] != submesh_idx) {
+                    continue;
+                }
+
+                // Add the triangle to our submesh's list of triangles
+                int submesh_tri_idx = submesh_n_tris;
+                submesh_mesh_tri_idxs[submesh_tri_idx] = mesh_tri_idx; // FIXME - Do we ever actually read this?
+                submesh_n_tris += 1;
+
+                // Add each of the triangle's verts to the submesh list of verts
+                // If that vertex is already in the submesh, use that index instead
+                for(int tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++) {
+                    int mesh_vert_idx = skel_model->meshes[i].tri_verts[(mesh_tri_idx * TRI_VERTS) + tri_vert_idx] + skel_model->meshes[i].first_vert;
+                    // FIXME - This is a pointer into the full model vert indices list... Do we instead want the index into the mesh's vertex list?
+
+                    // Check if this vertex is already in the submesh
+                    int submesh_vert_idx = -1;
+                    for(int j = 0; j < submesh_n_verts; j++) {
+                        if(submesh_mesh_vert_idxs[j] == mesh_vert_idx) {
+                            submesh_vert_idx = j;
+                            break;
+                        }
+                    }
+                    // If we didn't find the vertex in the submesh vertex list, add it
+                    if(submesh_vert_idx == -1) {
+                        submesh_vert_idx = submesh_n_verts;
+                        submesh_mesh_vert_idxs[submesh_n_verts] = mesh_vert_idx;
+                        submesh_n_verts += 1;
+                    }
+
+                    // Store the submesh vert idx for this triangle
+                    submesh_tri_verts[(submesh_tri_idx * TRI_VERTS) + tri_vert_idx] = submesh_vert_idx;
+                }
+            }
+            // ----------------------------------------------------------------
+
+
+            free(submesh_mesh_tri_idxs);
+            free(submesh_mesh_vert_idxs);
+            free(submesh_tri_verts);
+
+        }
+
+
+
+        // TODO: - Free these:
+        free(tri_n_bones);
+        free(tri_bones);
+        free(tri_submesh_idx);
+        // --------------------------------------------------------------------
+
+        // -------------------------------------------------------
+    }
+
+
+    
+
+
+
+
+    for(int i = 0; i < skel_model->n_meshes; i++) {
+        // TODO - Will need to dynamically allocate enough submeshes to fit.
+    }
+
+    // skel_model->meshes[i].tri_verts[j*3 + 0] = vert_a;
+}
+
+
+
 //
 // Creates a `Skeletal_Skeleton` object that uses this model's skeleton / animation skeleton pose information.
 //
@@ -855,8 +1307,10 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
         // Loop through the vert's 4 bone indices
         for(int j = 0; j < 4; j++) {
             int vert_bone_idx = model->vert_bone_idxs[4*i + j];
-            if(vert_bone_idx >= 0) {
-                float vert_bone_weight = model->vert_bone_weights[4*i + j];
+            float vert_bone_weight = model->vert_bone_weights[4*i + j];
+            // TODO - Measure impact of this speed? It skips over half othe vert-bone mapping matrix
+            if(vert_bone_idx >= 0 && vert_bone_weight > 0.01) {
+                // float vert_bone_weight = model->vert_bone_weights[4*i + j];
                 vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
                 vec3_t vert_bone_nor = mul_mat3x3_vec3(skeleton->bone_normal_transforms[vert_bone_idx], vert_rest_nor);
                 vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
@@ -1240,7 +1694,7 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     // Parse bones
     // --------------------------------------------------
     log_printf("Parsing joints...\n");
-    skel_model->n_bones = iqm_header->n_joints;
+    skel_model->n_bones = iqm_header->n_joints ? iqm_header->n_joints : iqm_header->n_poses;
     skel_model->bone_name = (char**) malloc(sizeof(char*) * skel_model->n_bones);
     skel_model->bone_parent_idx = (int16_t*) malloc(sizeof(int16_t) * skel_model->n_bones);
     skel_model->bone_rest_pos = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_bones);
@@ -1306,6 +1760,15 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
         skel_model->inv_bone_rest_transforms[i] = invert_mat3x4(skel_model->bone_rest_transforms[i]);
     }
     // --------------------------------------------------
+
+
+    // ========================================================================
+    // TEMP - Splitting each mesh into 8-bone meshes
+    // ========================================================================
+    submesh_skeletal_model(skel_model);
+    // ========================================================================
+
+
 
 
     // --------------------------------------------------
