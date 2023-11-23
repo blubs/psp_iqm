@@ -262,43 +262,83 @@ int main(int argc, char *argv[]) {
 
         // for(unsigned int i = 0; i < iqm_model->n_submeshes; i++) {
         unsigned int mesh_idx = ((unsigned int)((frame / 10.0f)) % iqm_model->n_meshes);
-        vertex_t *model_verts = iqm_model->verts;
  
         // for(unsigned int i = mesh_idx; i < mesh_idx+1; i++) {
         for(unsigned int i = 0; i < iqm_model->n_meshes; i++) {
             uint16_t *mesh_tri_vert_idxs = iqm_model->meshes[i].tri_verts;
-            unsigned int mesh_n_tri_verts = iqm_model->meshes[i].n_tri_verts;
+            // unsigned int mesh_n_tri_verts = iqm_model->meshes[i].n_tri_verts;
+            vertex_t *mesh_verts = iqm_model->meshes[i].verts;
+            unsigned int mesh_n_tris = iqm_model->meshes[i].n_tris;
             unsigned int mesh_n_verts = iqm_model->meshes[i].n_verts;
-            unsigned int mesh_first_vert = iqm_model->meshes[i].first_vert;
-            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
-            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
-            sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_tri_verts, mesh_tri_vert_idxs, model_verts + mesh_first_vert);
-            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, 0, model_verts + mesh_first_vert);
-            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_verts, 0, model_verts + mesh_first_vert);
-            // sceGumDrawArray(GU_POINTS,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, submesh_n_verts, submesh_tri_vert_idxs, model_verts + submesh_first_vert);
+            // unsigned int mesh_first_vert = iqm_model->meshes[i].first_vert;
 
-            // Okay, so now the vertices being drawn are correct... but the indices are still wrong..
+            // -----------------–-----------------–-----------------–----------
+            // Draw the mesh
+            // -----------------–-----------------–-----------------–----------
+            // sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_tris * 3, mesh_tri_vert_idxs, mesh_verts);
+            // -----------------–-----------------–-----------------–----------
 
 
-            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, submesh_n_tri_verts, submesh_tri_vert_idxs, submesh_verts);
-            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, submesh_n_tri_verts, 0, submesh_verts);
-            // FIXME - The issue may be that it's drawing the other vertices...
+            // -----------------–-----------------–-----------------–----------
+            // Draw the submeshes
+            // -----------------–-----------------–-----------------–----------
+            for(int submesh_idx = 0; submesh_idx < iqm_model->meshes[i].n_submeshes; submesh_idx++) {
+                // TODO - Bind all of the submesh bone matrices
+                // uint8_t n_skinning_bones = 0;
+                // uint8_t skinning_bone_idxs[8];
+                for(int submesh_bone_idx = 0; submesh_bone_idx < iqm_model->meshes[i].submeshes[submesh_idx].n_skinning_bones; submesh_bone_idx++) {
+                    // Get the index into the skeleton list of bones:
+                    int bone_idx = iqm_model->meshes[i].submeshes[submesh_idx].skinning_bone_idxs[submesh_bone_idx];
+                    mat3x4_t *bone_mat3x4 = &iqm_skeleton->bone_transforms[bone_idx];
 
-            // FIXME - The issue is that the list of VERTICES must specify the the triangles...
-            // I'm not sure why the triangle indices are being ignored.
+                    // Translate the mat3x4_t bone transform matrix to ScePspFMatrix4
+                    ScePspFMatrix4 bone_mat;
 
+                    // ScePspFMatrix4 Internal layout:
+                    // [ m.x.x  m.y.x  m.z.x  m.w.x ]
+                    // [ m.x.y  m.y.y  m.z.y  m.w.y ]
+                    // [ m.x.z  m.y.z  m.z.z  m.w.z ]
+                    // [ m.x.w  m.y.w  m.z.w  m.w.w ]
 
-            // for(unsigned int j = 0; j < iqm_model->submeshes[i].n_tris * 3; j++) {
-            //     submesh_verts[j].u = iqm_model->verts_uv[iqm_model->submeshes[i].tri_verts[j]].pos[0];
-            //     submesh_verts[j].v = iqm_model->verts_uv[iqm_model->submeshes[i].tri_verts[j]].pos[1];
-            //     submesh_verts[j].x = iqm_model->verts_pos[iqm_model->submeshes[i].tri_verts[j]].pos[0];
-            //     submesh_verts[j].y = iqm_model->verts_pos[iqm_model->submeshes[i].tri_verts[j]].pos[1];
-            //     submesh_verts[j].z = iqm_model->verts_pos[iqm_model->submeshes[i].tri_verts[j]].pos[2];
-            //     submesh_verts[j].color = 0xff7f0000;
-            // }
-            // // FIXME - horrible memory leak
-            // size_t n_floats = iqm_model->submeshes[i].n_tris * 3;
-            // sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,n_floats, 0, submesh_verts);
+                    // Ident
+                    // bone_mat.x.x = 1.0f;
+                    // bone_mat.y.y = 1.0f;
+                    // bone_mat.z.z = 1.0f;
+                    // bone_mat.w.w = 1.0f;
+
+                    // Actual pose matrices
+                    bone_mat.x.x = bone_mat3x4->m[0];
+                    bone_mat.x.y = bone_mat3x4->m[1];
+                    bone_mat.x.z = bone_mat3x4->m[2];
+
+                    bone_mat.y.x = bone_mat3x4->m[3];
+                    bone_mat.y.y = bone_mat3x4->m[4];
+                    bone_mat.y.z = bone_mat3x4->m[5];
+
+                    bone_mat.z.x = bone_mat3x4->m[6];
+                    bone_mat.z.y = bone_mat3x4->m[7];
+                    bone_mat.z.z = bone_mat3x4->m[8];
+
+                    bone_mat.w.x = bone_mat3x4->m[9];
+                    bone_mat.w.y = bone_mat3x4->m[10];
+                    bone_mat.w.z = bone_mat3x4->m[11];
+                    bone_mat.w.w = 1.0f;
+
+                    sceGuBoneMatrix(submesh_bone_idx, &bone_mat);
+                }
+
+                unsigned int submesh_n_tris = iqm_model->meshes[i].submeshes[submesh_idx].n_tris;
+                uint16_t *submesh_tri_vert_idxs = iqm_model->meshes[i].submeshes[submesh_idx].tri_verts;
+                skinning_vertex_t *submesh_verts = iqm_model->meshes[i].submeshes[submesh_idx].skinning_verts;
+
+                sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                    submesh_n_tris * 3, 
+                    submesh_tri_vert_idxs, 
+                    submesh_verts
+                );
+            }
+
+            // -----------------–-----------------–-----------------–----------
         }
         // --------------------------------------------------------------------
 
@@ -313,10 +353,10 @@ int main(int argc, char *argv[]) {
         // pspDebugScreenSetOffset((int) display_buffer);
 
         pspDebugScreenSetXY(1,3);
-        int vert_idx = frame % (iqm_model->n_verts);
-        pspDebugScreenPrintf("mesh[%d] n_tris: %ld, n_verts: %ld, n_tri_verts: %ld", mesh_idx, iqm_model->meshes[mesh_idx].n_tris, iqm_model->meshes[mesh_idx].n_verts, iqm_model->meshes[mesh_idx].n_tri_verts);
+        int vert_idx = frame % (iqm_model->meshes[mesh_idx].n_verts);
+        pspDebugScreenPrintf("mesh[%d] n_tris: %ld, n_verts: %ld", mesh_idx, iqm_model->meshes[mesh_idx].n_tris, iqm_model->meshes[mesh_idx].n_verts);
         pspDebugScreenSetXY(1,4);
-        pspDebugScreenPrintf("vertex[%d]: (%.3f,%.3f,%.3f) (%.3f, %.3f)", vert_idx, iqm_model->verts[vert_idx].x,iqm_model->verts[vert_idx].y,iqm_model->verts[vert_idx].z,iqm_model->verts[vert_idx].u,iqm_model->verts[vert_idx].v);
+        pspDebugScreenPrintf("vertex[%d]: (%.3f,%.3f,%.3f) (%.3f, %.3f)", vert_idx, iqm_model->meshes[mesh_idx].verts[vert_idx].x,iqm_model->meshes[mesh_idx].verts[vert_idx].y,iqm_model->meshes[mesh_idx].verts[vert_idx].z,iqm_model->meshes[mesh_idx].verts[vert_idx].u,iqm_model->meshes[mesh_idx].verts[vert_idx].v);
 
         // pspDebugScreenSetXY(40,3);  
         // pspDebugScreenPrintf("IQM Version: %d", iqm_header->version);

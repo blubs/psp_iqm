@@ -1176,10 +1176,12 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
 
             // For every vertex
             for(uint32_t vert_idx = 0; vert_idx < submesh_n_verts; vert_idx++) {
+                int mesh_vert_idx = submesh_mesh_vert_idxs[vert_idx];
+
                 // For every bone that belongs to that vertex
                 for(int vert_bone_idx = 0; vert_bone_idx < VERT_BONES; vert_bone_idx++) {
-                    uint8_t bone_idx = skel_model->meshes[i].vert_bone_idxs[vert_idx * VERT_BONES + vert_bone_idx];
-                    float bone_weight = skel_model->meshes[i].vert_bone_weights[vert_idx * VERT_BONES + vert_bone_idx];
+                    uint8_t bone_idx = skel_model->meshes[i].vert_bone_idxs[mesh_vert_idx * VERT_BONES + vert_bone_idx];
+                    float bone_weight = skel_model->meshes[i].vert_bone_weights[mesh_vert_idx * VERT_BONES + vert_bone_idx];
                     if(bone_weight > 0.0f) {
                         int vert_bone_submesh_idx = -1;
                         // Search the submesh's list of bones for this bone
