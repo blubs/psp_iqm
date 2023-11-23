@@ -9,6 +9,11 @@
 #define IQM_MAX_BONES 256
 
 
+#define VERT_BONES 4
+#define TRI_VERTS 3
+#define SUBMESH_BONES 8
+
+
 typedef struct vec3_s {
     float x,y,z;
 } vec3_t;
@@ -582,37 +587,45 @@ typedef struct vertex_s {
 } vertex_t;
 
 
+typedef struct skinning_vertex_s {
+    // Bone skinning weights, one per bone.
+    float bone_weights[8];
+    float u,v;
+    uint32_t color;
+    float nor_x, nor_y, nor_z;
+    float x,y,z;
+} skinning_vertex_t;
+
 
 typedef struct skeletal_mesh_s {
-    // Number of vertices in mesh
-    uint32_t n_verts;
-    // Number of triangles in mesh
-    uint32_t n_tris;
-    uint32_t n_tri_verts;
-    uint32_t first_vert;
-    // Contains vertex indices
-    uint16_t *tri_verts = nullptr;
+    uint32_t n_verts; // Number of unique vertices in this mesh
+    vec3_t *vert_rest_positions; // Contains the rest position of all vertices
+    vec3_t *vert_rest_normals; // Contains the rest normals of all vertices
+    float *vert_bone_weights; // 4 bone weights per vertex
+    uint8_t *vert_bone_idxs; // 4 bone indices per vertex
+
+    vertex_t *verts = nullptr; // Vertex struct passed to GU for drawing
+    skinning_vertex_t *skinning_verts = nullptr; // Vertex struct with 8 skinning weights passed to GU for drwaing
+
+    // Which bones to use for vertex skinning
+    uint8_t n_skinning_bones = 0;
+    uint8_t skinning_bone_idxs[8];
+
+    uint32_t n_tris; // Number of triangles in mesh
+    // uint32_t n_tri_verts; // Number of triangle vertex indices. (n_tris * 3)
+    uint16_t *tri_verts = nullptr; // Contains the vertex indices for each triangle
 
     // TODO - Geomset identifiers...
     // TODO - Material identifiers...
-    // TODO - Other vertex attributes (bone_idxs, bone_weights, normals, tangents, colors)
-    // TODO - An array with pre-allocated memory for cur_posed_vertices after a skeleton pose is applied
+    // TODO - Other vertex attributes (tangents, colors)
+
+    uint8_t n_submeshes = 0;
+    struct skeletal_mesh_s *submeshes = nullptr;
 } skeletal_mesh_t;
 
 
 
 typedef struct skeletal_model_s {
-    // List of all mesh vertices
-    uint32_t n_verts;
-    vec3_t *vert_rest_positions; // Contains the rest position of all vertices
-    vec3_t *vert_rest_normals; // Contains the rest normals of all vertices
-    // Contains the drawn vertex struct.
-    // The vertex positions in this array are updated whenever a skeleton pose is applied via `apply_skeleton_pose`
-    vertex_t *verts = nullptr;
-    float *vert_bone_weights; // 4 bone weights per vertex
-    uint8_t *vert_bone_idxs; // 4 bone indices per vertex
-
-
     // Model mins / maxs across all animation frames
     vec3_t mins;
     vec3_t maxs;
@@ -779,14 +792,11 @@ int bone_list_set_union(uint8_t *bone_list_a, int bone_list_a_n_bones, const uin
 // Splits each mesh in `skel_model` into submeshes that reference no more than 8 bones.
 //
 void submesh_skeletal_model(skeletal_model_t *skel_model) {
-    const int VERT_BONES = 4;
-    const int TRI_VERTS = 3;
-    const int SUBMESH_BONES = 8;
     log_printf("=========== Submesh started =============\n");
 
 
     // For each mesh, break it up into submeshes
-    for(int i = 0; i < skel_model->n_meshes; i++) {
+    for(uint32_t i = 0; i < skel_model->n_meshes; i++) {
 
         // log_printf("Mesh triangles: %d\n",skel_model->meshes[i].n_tris);
         // if(skel_model->meshes[i].n_tris < 50) {
@@ -809,19 +819,19 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
         uint8_t *tri_bones = (uint8_t*) malloc(sizeof(uint8_t) * TRI_VERTS * VERT_BONES * skel_model->meshes[i].n_tris); // Contains the list of bones referenced by the i-th triangle
 
 
-        for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+        for(uint32_t tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
             // Initialize this triangle's bone list to 0s
             for(int tri_bone_idx = 0; tri_bone_idx < TRI_VERTS * VERT_BONES; tri_bone_idx++) {
                 tri_bones[(tri_idx * TRI_VERTS * VERT_BONES) + tri_bone_idx] = 0;
             }
             tri_n_bones[tri_idx] = 0;
 
-            for(int tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++ ) {
-                int vert_idx = skel_model->meshes[i].tri_verts[(tri_idx * TRI_VERTS) + tri_vert_idx] + skel_model->meshes[i].first_vert;
+            for(uint32_t tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++ ) {
+                int vert_idx = skel_model->meshes[i].tri_verts[(tri_idx * TRI_VERTS) + tri_vert_idx];
                 // Loop through the vertex's referenced bones
                 for(int vert_bone_idx = 0; vert_bone_idx < VERT_BONES; vert_bone_idx++) {
-                    uint8_t bone_idx = skel_model->vert_bone_idxs[vert_idx * VERT_BONES + vert_bone_idx];
-                    float bone_weight = skel_model->vert_bone_weights[vert_idx * VERT_BONES + vert_bone_idx];
+                    uint8_t bone_idx = skel_model->meshes[i].vert_bone_idxs[vert_idx * VERT_BONES + vert_bone_idx];
+                    float bone_weight = skel_model->meshes[i].vert_bone_weights[vert_idx * VERT_BONES + vert_bone_idx];
 
                     if(bone_weight > 0) {
                         // Verify the bone is not already in this triangle's bone list
@@ -852,7 +862,7 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
         int8_t *tri_submesh_idx = (int8_t*) malloc(sizeof(int8_t) * skel_model->meshes[i].n_tris); // Contains the set the i-th triangle belongs to
         const int SET_DISCARD = -2; // Discarded triangles
         const int SET_UNASSIGNED = -1; // Denotes unassigned triangles
-        for(int j = 0; j < skel_model->meshes[i].n_tris; j++) {
+        for(uint32_t j = 0; j < skel_model->meshes[i].n_tris; j++) {
             tri_submesh_idx[j] = SET_UNASSIGNED;
         }
 
@@ -861,7 +871,7 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
         while(true) {
             // Find the unassigned triangle that uses the most bones:
             int cur_tri = -1;
-            for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+            for(uint32_t tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
                 // If this triangle isn't `UNASSIGNED`, skip it
                 if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
                     continue;
@@ -911,7 +921,7 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
             log_printf("]\n");
 
             // Add all unassigned triangles from the main mesh that references bones in this submesh's bone list
-            for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+            for(uint32_t tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
                 // If this triangle isn't `UNASSIGNED`, skip it
                 if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
                     continue;
@@ -939,7 +949,7 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
             // Print how many triangles belong to the current submesh
             int cur_submesh_n_tris = 0;
             int n_assigned_tris = 0;
-            for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+            for(uint32_t tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
                 if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
                     n_assigned_tris++;
                 }
@@ -955,7 +965,7 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
                 // Get triangle with the minimum number of bones not in the current submesh bone list
                 cur_tri = -1;
                 int cur_tri_n_missing_bones = 0;
-                for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                for(uint32_t tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
                     // If this triangle isn't `UNASSIGNED`, skip it
                     if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
                         continue;
@@ -998,7 +1008,7 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
 
 
                 // Add all unassigned triangles from the main mesh that reference bones in this submesh's bone list
-                for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                for(uint32_t tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
                     // If this triangle isn't `UNASSIGNED`, skip it
                     if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
                         continue;
@@ -1025,7 +1035,7 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
                 // Print how many triangles belong to the current submesh
                 cur_submesh_n_tris = 0;
                 n_assigned_tris = 0;
-                for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+                for(uint32_t tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
                     if(tri_submesh_idx[tri_idx] != SET_UNASSIGNED) {
                         n_assigned_tris++;
                     }
@@ -1043,11 +1053,15 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
 
         int n_submeshes = cur_submesh_idx + 1;
 
+        skel_model->meshes[i].n_submeshes = n_submeshes;
+        skel_model->meshes[i].submeshes = (skeletal_mesh_t *) malloc(sizeof(skeletal_mesh_t) * n_submeshes);
+
+
         for(int submesh_idx = 0; submesh_idx < n_submeshes; submesh_idx++) {
             log_printf("Reconstructing submesh %d for mesh %d\n", submesh_idx, i);
             // Count the number of triangles that have been assigned to this submesh
             int submesh_tri_count = 0;
-            for(int tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
+            for(uint32_t tri_idx = 0; tri_idx < skel_model->meshes[i].n_tris; tri_idx++) {
                 if(tri_submesh_idx[tri_idx] == submesh_idx) {
                     submesh_tri_count++;
                 }
@@ -1061,14 +1075,14 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
             uint16_t *submesh_mesh_vert_idxs = (uint16_t*) malloc(sizeof(uint16_t) * TRI_VERTS * submesh_tri_count); // Indices into mesh list of vertices
             // Allocate enough memoery to fit 3 vertex indices per triangle
             uint16_t *submesh_tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * TRI_VERTS * submesh_tri_count);
-            int submesh_n_tris = 0;
-            int submesh_n_verts = 0;
+            uint32_t submesh_n_tris = 0;
+            uint32_t submesh_n_verts = 0;
 
             // ----------------------------------------------------------------
             // Build this submesh's list of triangle indices, vertex list, and
             // triangle vertex indices
             // ----------------------------------------------------------------
-            for(int mesh_tri_idx = 0; mesh_tri_idx < skel_model->meshes[i].n_tris; mesh_tri_idx++) {
+            for(uint32_t mesh_tri_idx = 0; mesh_tri_idx < skel_model->meshes[i].n_tris; mesh_tri_idx++) {
                 // Skip triangles that don't belong to this submesh
                 if(tri_submesh_idx[mesh_tri_idx] != submesh_idx) {
                     continue;
@@ -1082,12 +1096,12 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
                 // Add each of the triangle's verts to the submesh list of verts
                 // If that vertex is already in the submesh, use that index instead
                 for(int tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++) {
-                    int mesh_vert_idx = skel_model->meshes[i].tri_verts[(mesh_tri_idx * TRI_VERTS) + tri_vert_idx] + skel_model->meshes[i].first_vert;
+                    int mesh_vert_idx = skel_model->meshes[i].tri_verts[(mesh_tri_idx * TRI_VERTS) + tri_vert_idx];
                     // FIXME - This is a pointer into the full model vert indices list... Do we instead want the index into the mesh's vertex list?
 
                     // Check if this vertex is already in the submesh
                     int submesh_vert_idx = -1;
-                    for(int j = 0; j < submesh_n_verts; j++) {
+                    for(uint32_t j = 0; j < submesh_n_verts; j++) {
                         if(submesh_mesh_vert_idxs[j] == mesh_vert_idx) {
                             submesh_vert_idx = j;
                             break;
@@ -1106,6 +1120,110 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
             }
             // ----------------------------------------------------------------
 
+            skel_model->meshes[i].submeshes[submesh_idx].n_verts = submesh_n_verts;
+            skel_model->meshes[i].submeshes[submesh_idx].n_tris = submesh_n_tris;
+
+            skel_model->meshes[i].submeshes[submesh_idx].vert_rest_positions = (vec3_t*) malloc(sizeof(vec3_t) * submesh_n_verts);
+            skel_model->meshes[i].submeshes[submesh_idx].vert_rest_normals = (vec3_t*) malloc(sizeof(vec3_t) * submesh_n_verts);
+            skel_model->meshes[i].submeshes[submesh_idx].verts = nullptr;
+            skel_model->meshes[i].submeshes[submesh_idx].skinning_verts = (skinning_vertex_t*) malloc(sizeof(skinning_vertex_t) * submesh_n_verts);
+            skel_model->meshes[i].submeshes[submesh_idx].vert_bone_weights = (float*) malloc(sizeof(float) * VERT_BONES * submesh_n_verts);
+            skel_model->meshes[i].submeshes[submesh_idx].vert_bone_idxs = (uint8_t*) malloc(sizeof(uint8_t) * VERT_BONES * submesh_n_verts);
+
+
+            for(uint32_t vert_idx = 0; vert_idx < submesh_n_verts; vert_idx++) {
+                uint16_t mesh_vert_idx = submesh_mesh_vert_idxs[vert_idx]; 
+                skel_model->meshes[i].submeshes[submesh_idx].vert_rest_positions[vert_idx] = skel_model->meshes[i].vert_rest_positions[mesh_vert_idx];
+                skel_model->meshes[i].submeshes[submesh_idx].vert_rest_normals[vert_idx] = skel_model->meshes[i].vert_rest_normals[mesh_vert_idx];
+
+                for(int k = 0; k < 4; k++) {
+                    skel_model->meshes[i].submeshes[submesh_idx].vert_bone_weights[(vert_idx * VERT_BONES) + k] = skel_model->meshes[i].vert_bone_weights[(mesh_vert_idx * VERT_BONES) + k];
+                    skel_model->meshes[i].submeshes[submesh_idx].vert_bone_idxs[(vert_idx * VERT_BONES) + k] = skel_model->meshes[i].vert_bone_idxs[(mesh_vert_idx * VERT_BONES) + k];
+                }
+
+                // Copy vertex struct values
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].x = skel_model->meshes[i].verts[mesh_vert_idx].x;
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].y = skel_model->meshes[i].verts[mesh_vert_idx].y;
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].z = skel_model->meshes[i].verts[mesh_vert_idx].z;
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].u = skel_model->meshes[i].verts[mesh_vert_idx].u;
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].v = skel_model->meshes[i].verts[mesh_vert_idx].v;
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].nor_x = skel_model->meshes[i].verts[mesh_vert_idx].nor_x;
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].nor_y = skel_model->meshes[i].verts[mesh_vert_idx].nor_y;
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].nor_z = skel_model->meshes[i].verts[mesh_vert_idx].nor_z;
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].color = 0x00000000;
+
+                // Initialize all bone weights to 0.0f
+                for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                    skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[bone_idx] = 0.0f;
+                }
+            }
+
+
+            skel_model->meshes[i].submeshes[submesh_idx].vert_bone_idxs = nullptr;
+            skel_model->meshes[i].submeshes[submesh_idx].vert_bone_weights = nullptr;
+            skel_model->meshes[i].submeshes[submesh_idx].n_submeshes = 0;
+            skel_model->meshes[i].submeshes[submesh_idx].submeshes = nullptr;
+
+            // ----------------------------------------------------------------
+            // Build the submesh's list of bones indices, and the vertex weights
+            // ----------------------------------------------------------------
+            int n_submesh_bones = 0;
+            uint8_t *submesh_bones = (uint8_t*) malloc(sizeof(uint8_t) * SUBMESH_BONES);
+            // Initialize to all 0s
+            for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                submesh_bones[bone_idx] = 0;
+            }
+
+            // For every vertex
+            for(uint32_t vert_idx = 0; vert_idx < submesh_n_verts; vert_idx++) {
+                // For every bone that belongs to that vertex
+                for(int vert_bone_idx = 0; vert_bone_idx < VERT_BONES; vert_bone_idx++) {
+                    uint8_t bone_idx = skel_model->meshes[i].vert_bone_idxs[vert_idx * VERT_BONES + vert_bone_idx];
+                    float bone_weight = skel_model->meshes[i].vert_bone_weights[vert_idx * VERT_BONES + vert_bone_idx];
+                    if(bone_weight > 0.0f) {
+                        int vert_bone_submesh_idx = -1;
+                        // Search the submesh's list of bones for this bone
+                        for(int submesh_bone_idx = 0; submesh_bone_idx < n_submesh_bones; submesh_bone_idx++) {
+                            if(bone_idx == submesh_bones[submesh_bone_idx]) {
+                                vert_bone_submesh_idx = submesh_bone_idx;
+                                break;
+                            }
+                        }
+
+                        // If we didn't find the bone, add it to the submesh's list of bones
+                        if(vert_bone_submesh_idx == -1) {
+                            submesh_bones[n_submesh_bones] = bone_idx;
+                            vert_bone_submesh_idx = n_submesh_bones;
+                            n_submesh_bones += 1;
+                        }
+
+                        // Set the vertex's corresponding weight entry for that bone
+                        skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[vert_bone_submesh_idx] = bone_weight;
+                    }
+                }
+            }
+
+
+
+            // Save the submesh's list of bone indices
+            skel_model->meshes[i].submeshes[submesh_idx].n_skinning_bones = n_submesh_bones;
+            for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                skel_model->meshes[i].submeshes[submesh_idx].skinning_bone_idxs[bone_idx] = submesh_bones[bone_idx];
+            }
+            // ----------------------------------------------------------------
+
+
+            // ----------------------------------------------------------------
+            // Set the triangle vertex indices
+            // ----------------------------------------------------------------
+            skel_model->meshes[i].submeshes[submesh_idx].tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * TRI_VERTS * submesh_n_tris);
+            for(uint32_t tri_idx = 0; tri_idx < submesh_n_tris; tri_idx++) {
+                skel_model->meshes[i].submeshes[submesh_idx].tri_verts[tri_idx * TRI_VERTS + 0] = submesh_tri_verts[tri_idx * TRI_VERTS + 0];
+                skel_model->meshes[i].submeshes[submesh_idx].tri_verts[tri_idx * TRI_VERTS + 1] = submesh_tri_verts[tri_idx * TRI_VERTS + 1];
+                skel_model->meshes[i].submeshes[submesh_idx].tri_verts[tri_idx * TRI_VERTS + 2] = submesh_tri_verts[tri_idx * TRI_VERTS + 2];
+            }
+            // ----------------------------------------------------------------
+
 
             free(submesh_mesh_tri_idxs);
             free(submesh_mesh_vert_idxs);
@@ -1113,28 +1231,11 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
 
         }
 
-
-
-        // TODO: - Free these:
         free(tri_n_bones);
         free(tri_bones);
         free(tri_submesh_idx);
         // --------------------------------------------------------------------
-
-        // -------------------------------------------------------
     }
-
-
-    
-
-
-
-
-    for(int i = 0; i < skel_model->n_meshes; i++) {
-        // TODO - Will need to dynamically allocate enough submeshes to fit.
-    }
-
-    // skel_model->meshes[i].tri_verts[j*3 + 0] = vert_a;
 }
 
 
@@ -1294,38 +1395,40 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
     }
 
 
-    // Apply skeleton pose to all vertices
-    for(uint32_t i = 0; i < model->n_verts; i++) {
-        vec3_t vert_rest_pos = model->vert_rest_positions[i];
-        vec3_t vert_rest_nor = model->vert_rest_normals[i];
-        // Accumulate final vertex position here to calculate weighted sum
-        vec3_t vert_pos = { 0.0f, 0.0f, 0.0f};
-        vec3_t vert_nor = { 0.0f, 0.0f, 0.0f};
-        // Accumulate weighted sum total here
-        float total_weight = 0.0f;
+    // Apply skeleton pose to all vertices for all meshes
+    for(uint32_t mesh_idx = 0; mesh_idx < model->n_meshes; mesh_idx++) {
+        for(uint32_t vert_idx = 0; vert_idx < model->meshes[mesh_idx].n_verts; vert_idx++) {
+            vec3_t vert_rest_pos = model->meshes[mesh_idx].vert_rest_positions[vert_idx];
+            vec3_t vert_rest_nor = model->meshes[mesh_idx].vert_rest_normals[vert_idx];
+            // Accumulate final vertex position here to calculate weighted sum
+            vec3_t vert_pos = { 0.0f, 0.0f, 0.0f};
+            vec3_t vert_nor = { 0.0f, 0.0f, 0.0f};
+            // Accumulate weighted sum total here
+            float total_weight = 0.0f;
 
-        // Loop through the vert's 4 bone indices
-        for(int j = 0; j < 4; j++) {
-            int vert_bone_idx = model->vert_bone_idxs[4*i + j];
-            float vert_bone_weight = model->vert_bone_weights[4*i + j];
-            // TODO - Measure impact of this speed? It skips over half othe vert-bone mapping matrix
-            if(vert_bone_idx >= 0 && vert_bone_weight > 0.01) {
-                // float vert_bone_weight = model->vert_bone_weights[4*i + j];
-                vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
-                vec3_t vert_bone_nor = mul_mat3x3_vec3(skeleton->bone_normal_transforms[vert_bone_idx], vert_rest_nor);
-                vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
-                vert_nor = add_vec3( vert_nor, mul_float_vec3( vert_bone_weight, vert_bone_nor));
-                total_weight += vert_bone_weight;
+            // Loop through the vert's 4 bone indices
+            for(int i = 0; i < 4; i++) {
+                int vert_bone_idx = model->meshes[mesh_idx].vert_bone_idxs[(4*vert_idx) + i];
+                float vert_bone_weight = model->meshes[mesh_idx].vert_bone_weights[(4*vert_idx) + i];
+                // TODO - Measure impact of this speed? It skips over half othe vert-bone mapping matrix
+                if(vert_bone_idx >= 0 && vert_bone_weight > 0.01) {
+                    // float vert_bone_weight = model->vert_bone_weights[4*i + j];
+                    vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
+                    vec3_t vert_bone_nor = mul_mat3x3_vec3(skeleton->bone_normal_transforms[vert_bone_idx], vert_rest_nor);
+                    vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+                    vert_nor = add_vec3( vert_nor, mul_float_vec3( vert_bone_weight, vert_bone_nor));
+                    total_weight += vert_bone_weight;
+                }
             }
-        }
 
-        model->verts[i].x = vert_pos.x / total_weight;
-        model->verts[i].y = vert_pos.y / total_weight;
-        model->verts[i].z = vert_pos.z / total_weight;
-        model->verts[i].nor_x = vert_nor.x / total_weight;
-        model->verts[i].nor_y = vert_nor.y / total_weight;
-        model->verts[i].nor_z = vert_nor.z / total_weight;
-        // TODO - Write vertex tangents?
+            model->meshes[mesh_idx].verts[vert_idx].x = vert_pos.x / total_weight;
+            model->meshes[mesh_idx].verts[vert_idx].y = vert_pos.y / total_weight;
+            model->meshes[mesh_idx].verts[vert_idx].z = vert_pos.z / total_weight;
+            model->meshes[mesh_idx].verts[vert_idx].nor_x = vert_nor.x / total_weight;
+            model->meshes[mesh_idx].verts[vert_idx].nor_y = vert_nor.y / total_weight;
+            model->meshes[mesh_idx].verts[vert_idx].nor_z = vert_nor.z / total_weight;
+            // TODO - Write vertex tangents?
+        }
     }
 
 
@@ -1615,14 +1718,12 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
 
 
     skeletal_model_t *skel_model = (skeletal_model_t*) malloc(sizeof(skeletal_model_t));
-    skel_model->n_verts = iqm_header->n_verts;
-    skel_model->verts = (vertex_t*) malloc(sizeof(vertex_t) * skel_model->n_verts);
-    skel_model->vert_rest_positions = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_verts);
-    skel_model->vert_rest_normals = (vec3_t*) malloc(sizeof(vec3_t) * skel_model->n_verts);
     skel_model->n_meshes = iqm_header->n_meshes;
     skel_model->meshes = (skeletal_mesh_t*) malloc(sizeof(skeletal_mesh_t) * skel_model->n_meshes);
 
-    vec2_t *verts_uv = (vec2_t*) malloc(sizeof(vec2_t) * skel_model->n_verts);
+    vec2_t *verts_uv = (vec2_t*) malloc(sizeof(vec2_t) * iqm_header->n_verts);
+    vec3_t *verts_pos = (vec3_t*) malloc(sizeof(vec3_t) * iqm_header->n_verts);
+    vec3_t *verts_nor = (vec3_t*) malloc(sizeof(vec3_t) * iqm_header->n_verts);
 
     // ------------------------------------------------------------------------
     // Convert verts_pos / verts_uv datatypes to floats 
@@ -1631,38 +1732,28 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     vec2_t default_uv = {0,0};
     vec3_t default_nor = {0,0,1.0f};
 
-    iqm_parse_float_array(iqm_data, iqm_verts_pos, (float*) skel_model->vert_rest_positions, skel_model->n_verts, 3, (float*) &default_vert);
-    iqm_parse_float_array(iqm_data, iqm_verts_uv, (float*) verts_uv, skel_model->n_verts, 2, (float*) &default_uv);
-    iqm_parse_float_array(iqm_data, iqm_verts_nor, (float*) skel_model->vert_rest_normals, skel_model->n_verts, 3, (float*) &default_nor);
+    iqm_parse_float_array(iqm_data, iqm_verts_pos, (float*) verts_pos, iqm_header->n_verts, 3, (float*) &default_vert);
+    iqm_parse_float_array(iqm_data, iqm_verts_uv,  (float*) verts_uv,  iqm_header->n_verts, 2, (float*) &default_uv);
+    iqm_parse_float_array(iqm_data, iqm_verts_nor, (float*) verts_nor, iqm_header->n_verts, 3, (float*) &default_nor);
 
 
-    skel_model->vert_bone_weights = (float*) malloc(sizeof(float) * 4 * skel_model->n_verts);
-    skel_model->vert_bone_idxs = (uint8_t*) malloc(sizeof(uint8_t) * 4 * skel_model->n_verts);
+    float *verts_bone_weights = (float*)   malloc(sizeof(float) * 4 * iqm_header->n_verts);
+    uint8_t *verts_bone_idxs  = (uint8_t*) malloc(sizeof(uint8_t) * 4 * iqm_header->n_verts);
     float default_bone_weights[] = {0.0f, 0.0f, 0.0f, 0.0f};
-    iqm_parse_float_array(iqm_data, iqm_verts_bone_weights, skel_model->vert_bone_weights,  skel_model->n_verts, 4, (float*) &default_bone_weights);
-    iqm_parse_uint8_array(iqm_data, iqm_verts_bone_idxs,    skel_model->vert_bone_idxs,     skel_model->n_verts, 4, (uint8_t) std::min( (int) iqm_header->n_joints, (int) IQM_MAX_BONES));
+    iqm_parse_float_array(iqm_data, iqm_verts_bone_weights, verts_bone_weights,  iqm_header->n_verts, 4, (float*) &default_bone_weights);
+    iqm_parse_uint8_array(iqm_data, iqm_verts_bone_idxs,    verts_bone_idxs,     iqm_header->n_verts, 4, (uint8_t) std::min( (int) iqm_header->n_joints, (int) IQM_MAX_BONES));
+
+
+    // TODO - Parse / set other vertex attributes we care about:
+    // - vertex normals <-  iqm_verts_nor
+    // - vertex tangents <- iqm_verts_tan
+    // - vertex colors <-   iqm_verts_color
 
 
 
-    // Populate verts array:
-    for(uint32_t i = 0; i < skel_model->n_verts; i++) {
-        // NOTE: Initialize the vertex positions to the rest position.
-        // NOTE: The vertex xyz coords will be updated whenever we apply a new skeletal pose to this model.
-        skel_model->verts[i].x = skel_model->vert_rest_positions[i].x; 
-        skel_model->verts[i].y = skel_model->vert_rest_positions[i].y;
-        skel_model->verts[i].z = skel_model->vert_rest_positions[i].z;
-        skel_model->verts[i].u = verts_uv[i].x;
-        skel_model->verts[i].v = verts_uv[i].y;
-        // skel_model->verts[i].color = 0xffffffff;
-        skel_model->verts[i].color = 0x00000000;
-        skel_model->verts[i].nor_x = skel_model->vert_rest_normals[i].x;
-        skel_model->verts[i].nor_y = skel_model->vert_rest_normals[i].y;
-        skel_model->verts[i].nor_z = skel_model->vert_rest_normals[i].z;
-        // TODO - Parse other potentially optional vertex attribute arrays
-
-    free(verts_uv);
-    // ------------------------------------------------------------------------
-
+    // TODO - Require `iqm_verts_pos`, if not defined, abort loading IQM model
+    // TODO - Require `iqm_verts_uv`, if not defined, abort loading IQM model
+    // TODO - How will we handle this with animation-only skeletal models?
 
 
     const iqm_mesh_t *iqm_meshes = (const iqm_mesh_t*)(iqm_data + iqm_header->ofs_meshes);
@@ -1673,12 +1764,62 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
 
         uint32_t first_vert = iqm_meshes[i].first_vert_idx;
         uint32_t first_tri = iqm_meshes[i].first_tri;
-        skel_model->meshes[i].first_vert = first_vert;
-        skel_model->meshes[i].n_verts = iqm_meshes[i].n_verts;
-        skel_model->meshes[i].n_tris = iqm_meshes[i].n_tris;
-        skel_model->meshes[i].n_tri_verts = skel_model->meshes[i].n_tris * 3;
-        skel_model->meshes[i].tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * skel_model->meshes[i].n_tri_verts);
+        // skel_model->meshes[i].first_vert = first_vert;
+        uint32_t n_verts = iqm_meshes[i].n_verts;
+        skel_model->meshes[i].n_verts = n_verts;
 
+        skel_model->meshes[i].verts = (vertex_t*) malloc(sizeof(vertex_t) * n_verts);
+        skel_model->meshes[i].skinning_verts = nullptr;
+        skel_model->meshes[i].vert_rest_positions = (vec3_t*) malloc(sizeof(vec3_t) * n_verts);
+        skel_model->meshes[i].vert_rest_normals = (vec3_t*) malloc(sizeof(vec3_t) * n_verts);
+        skel_model->meshes[i].vert_bone_weights = (float*) malloc(sizeof(float) * 4 * n_verts);
+        skel_model->meshes[i].vert_bone_idxs = (uint8_t*) malloc(sizeof(uint8_t) * 4 * n_verts);
+        skel_model->meshes[i].n_submeshes = 0;
+        skel_model->meshes[i].submeshes = nullptr;
+
+
+
+        for(uint32_t j = 0; j < skel_model->meshes[i].n_verts; j++) {
+            // Write static fields:
+            skel_model->meshes[i].vert_rest_positions[j] = verts_pos[first_vert + j];
+            skel_model->meshes[i].vert_rest_normals[j] = verts_nor[first_vert + j];
+            for(int k = 0; k < 4; k++) {
+                skel_model->meshes[i].vert_bone_weights[j * 4 + k] = verts_bone_weights[(first_vert + j) * 4 + k];
+                skel_model->meshes[i].vert_bone_idxs[j * 4 + k] = verts_bone_idxs[(first_vert + j) * 4 + k];
+            }
+
+
+            // Write the GE vert struct
+            skel_model->meshes[i].verts[j].x = skel_model->meshes[i].vert_rest_positions[j].x; 
+            skel_model->meshes[i].verts[j].y = skel_model->meshes[i].vert_rest_positions[j].y;
+            skel_model->meshes[i].verts[j].z = skel_model->meshes[i].vert_rest_positions[j].z;
+            skel_model->meshes[i].verts[j].u = verts_uv[first_vert + j].x;
+            skel_model->meshes[i].verts[j].v = verts_uv[first_vert + j].y;
+            // skel_model->meshes[i].verts[j].color = 0xffffffff;
+            skel_model->meshes[i].verts[j].color = 0x00000000;
+            skel_model->meshes[i].verts[j].nor_x = skel_model->meshes[i].vert_rest_normals[j].x;
+            skel_model->meshes[i].verts[j].nor_y = skel_model->meshes[i].vert_rest_normals[j].y;
+            skel_model->meshes[i].verts[j].nor_z = skel_model->meshes[i].vert_rest_normals[j].z;
+            // TODO - Parse other potentially optional vertex attribute arrays
+
+            // TODO - Write other constant vertex attributes
+            // TODO     vertex colors
+            // TODO   This excludes:
+            // TODO     Normals (these are modified by the skeleton, but perhaps they should be initialized to the rest pose)
+            // TODO     Tangents (these are modified by the skeleton, but perhaps they should be initialized to the rest pose)
+            // TODO     bone idxs / weights (These are applied to the vertices in the software implementation)
+
+            // TODO - Write other vertex attributes?
+            // Or wait, this struct needs to be kept clear right?
+            // Blend weights / blend indices get applied outside of this struct and copied in...
+        }
+
+        // TODO - Allocate another copy of the vert struct that has space for the 8 bone weights?
+        // TODO - Maybe I don't do that here and only in the submesh...
+
+        skel_model->meshes[i].n_tris = iqm_meshes[i].n_tris;
+        // skel_model->meshes[i].n_tri_verts = skel_model->meshes[i].n_tris * 3;
+        skel_model->meshes[i].tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * 3 * skel_model->meshes[i].n_tris);
 
         for(uint32_t j = 0; j < skel_model->meshes[i].n_tris; j++) {
             uint16_t vert_a = ((iqm_tri_t*)(iqm_data + iqm_header->ofs_tris))[first_tri + j].vert_idxs[0] - first_vert;
@@ -1689,6 +1830,14 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             skel_model->meshes[i].tri_verts[j*3 + 2] = vert_c;
         }
     }
+    free(verts_pos);
+    free(verts_uv);
+    free(verts_nor);
+    free(verts_bone_weights);
+    free(verts_bone_idxs);
+    // ------------------------------------------------------------------------
+
+
 
     // --------------------------------------------------
     // Parse bones
@@ -1718,6 +1867,8 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
         skel_model->bone_rest_scale[i].y = iqm_joints[i].scale[1];
         skel_model->bone_rest_scale[i].z = iqm_joints[i].scale[2];
     }
+    log_printf("\tParsed %d bones.\n", skel_model->n_bones);
+
 
     // By default, IQM exporter will have bones sorted such that a bone is 
     // at a lower index in the bone array than any of its children.
@@ -1864,9 +2015,9 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
     size_t iqm_fte_ext_mesh_size;
     const iqm_ext_fte_mesh_t *iqm_fte_ext_mesh = (const iqm_ext_fte_mesh_t *) iqm_find_extension(iqm_data, file_len, "FTE_MESH", &iqm_fte_ext_mesh_size);
 
-    // TODO - Do something with the above extensions data
     if(iqm_fte_ext_mesh != nullptr) {
         for(uint16_t i = 0; i < iqm_header->n_meshes; i++) {
+            // TODO - How / where do I want to stash these?
             log_printf("IQM FTE Extension \"FTE_MESH \" mesh %d\n", i);
             log_printf("\tcontents %d\n", iqm_fte_ext_mesh[i].contents);
             log_printf("\tsurfaceflags %d\n", iqm_fte_ext_mesh[i].surfaceflags);
