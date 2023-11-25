@@ -1340,7 +1340,7 @@ void build_skeleton(skeletal_skeleton_t *skeleton, skeletal_model_t *source_mode
     frame2_idx = source_model->framegroup_start_frame[framegroup_idx] + frame2_idx;
     // TODO - If lerpfrac is 0.0 or 1.0, don't interpolate, just copy the bone poses
 
-    log_printf("build_skeleton. frametime: %f, (%d, %d, %f)\n", frametime, frame1_idx, frame2_idx, lerpfrac);
+    // log_printf("build_skeleton. frametime: %f, (%d, %d, %f)\n", frametime, frame1_idx, frame2_idx, lerpfrac);
 
 
 

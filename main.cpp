@@ -4,6 +4,9 @@
 #include <string.h>
 
 
+#define F_clock_gettime
+
+
 #include <pspkernel.h>
 #include <pspdisplay.h>
 #include <pspdebug.h>
@@ -125,6 +128,18 @@ int load_png_file(const char *file, texture_t *tex) {
 
 #include "logging.h"
 
+double get_epoch_time() {
+    clockid_t clk_id;
+    struct timespec tspec;
+    clock_gettime(clk_id, &tspec);
+
+    // Time since epoch
+    tspec.tv_sec;
+    tspec.tv_nsec;
+    double epoch_time = tspec.tv_sec + (tspec.tv_nsec / 1e9);
+    return epoch_time;
+}
+
 
 int main(int argc, char *argv[]) {
     log_printf("Starting program\n");
@@ -189,7 +204,11 @@ int main(int argc, char *argv[]) {
     unsigned int frame = 0;
     float frametime = 0;
 
+    double start_epoch_time = get_epoch_time();
+
     while(running()) {
+        const float DEG2RAD = (GU_PI/180.0f);
+
         sceGuStart(GU_DIRECT, display_list);
         // Smoothly fade between 0 and 1:
         // float fade = 0.5f * (sin((float)frame / 10.0f) + 1.0f);
@@ -205,142 +224,210 @@ int main(int argc, char *argv[]) {
         sceGumMatrixMode(GU_PROJECTION);
         sceGumLoadIdentity();
         sceGumPerspective(75.0f, 16.0f/9.0f, 0.5f, 1000.0f);
-        sceGumMatrixMode(GU_VIEW); // TODO Move the camera somewhere...
+
+        // --------------------------------------------
+        // Move the camera
+        // --------------------------------------------
+        // float sin_time = sin((float)frame / 10.0f);
+
+        sceGumMatrixMode(GU_VIEW);
         sceGumLoadIdentity();
-        sceGumMatrixMode(GU_MODEL);
-        sceGumLoadIdentity();
-        // ScePspFVector3 model_pos = {0,-10.0f,0.0f};
-        // ScePspFVector3 model_pos = {0,0,-2.5f};
-        // ScePspFVector3 model_pos = {10.0f,0,0.0f};
-        // ScePspFVector3 model_pos = {0,-10.0f,0.0f};
-        ScePspFVector3 model_pos = {0,0,-10.0f};
-        // ScePspFVector3 model_rot = {frame * 0.79f * (GU_PI/180.0f), frame * 0.98f * (GU_PI/180.0f), frame * 1.32f * (GU_PI/180.0f)};
-        // ScePspFVector3 model_rot = {0, frame * 1.32f * (GU_PI/180.0f), 0};
-        ScePspFVector3 model_rot = {-90 * (GU_PI/180.0f), 0, (frame * rot_speed + -90) * (GU_PI/180.0f)};
-        // ScePspFVector3 model_rot = {-90 * (GU_PI/180.0f), 0, (-90) * (GU_PI/180.0f)};
-        // float scale = (sin((float)frame / 10.0f) + 1.0f) * 100;
-        ScePspFVector3 model_scale = {scale,scale,scale};
-        sceGumTranslate(&model_pos);
-        sceGumScale(&model_scale);
-        sceGumRotateXYZ(&model_rot);
+        ScePspFVector3 camera_pos = {0,10.0f, 20.0f};
+        ScePspFVector3 camera_rot = {-20 * DEG2RAD, 0, 0};
+        sceGumTranslate(&camera_pos);
+        sceGumRotateXYZ(&camera_rot);
+        sceGumFastInverse();
+        // --------------------------------------------
 
 
-        // -----------------------------------
-        // Translate IQM model data to PSP format:
-        // FIXME - This is bad...
-        // -----------------------------------
-        sceGuTexMode(GU_PSM_8888,0,0,0);
-        sceGuTexImage(0,zombie_tex->width,zombie_tex->height,zombie_tex->width,zombie_tex->data);
-        sceGuTexFunc(GU_TFX_ADD,GU_TCC_RGB);
-        sceGuTexEnvColor(0xffff00);
-        sceGuTexFilter(GU_LINEAR, GU_LINEAR);
-        sceGuTexScale(1.0f,1.0f);
-        sceGuTexOffset(0.0f,0.0f);
-        sceGuAmbientColor(0xffffffff);
+        float grid_min_x = -10.0f;
+        float grid_max_x = 10.0f;
+        float grid_min_z = -10.0f;
+        float grid_max_z = 10.0f;
+
+        int grid_models_x = 5;
+        int grid_models_z = 5;
+
+        // Derived vars
+        int grid_n_models = grid_models_x * grid_models_z;
+        float grid_x_spacing = (grid_max_x - grid_min_x) / (grid_models_x - 1);
+        float grid_z_spacing = (grid_max_z - grid_min_z) / (grid_models_z - 1);
+        
+
+        // Draw multiple models
+        for(int i = 0; i < grid_n_models; i++) {
+            int model_x_idx = (float) ((int) (i % grid_models_x));
+            int model_z_idx = (float) ((int) i / grid_models_x);
+            float model_pos_x = grid_min_x + (model_x_idx * grid_x_spacing);
+            float model_pos_z = grid_min_z + (model_z_idx * grid_z_spacing);
+            float model_pos_y = 0.0f;
 
 
-        // --------------------------------------------------------------------
-        // Updating the model's animation / drawing state
-        // --------------------------------------------------------------------
-        frametime = (frame / 60.0f); // 60 FPS animation
-        // frametime = 0;
-        // Set the skeleton's current pose matrices from animation data
+            sceGumMatrixMode(GU_MODEL);
+            sceGumLoadIdentity();
+            ScePspFVector3 model_pos = {
+                model_pos_x,
+                model_pos_y,
+                model_pos_z
+            };
+            // ScePspFVector3 model_rot = {frame * 0.79f * (GU_PI/180.0f), frame * 0.98f * (GU_PI/180.0f), frame * 1.32f * (GU_PI/180.0f)};
+            // ScePspFVector3 model_rot = {0, frame * 1.32f * (GU_PI/180.0f), 0};
+            ScePspFVector3 model_rot = {-90 * DEG2RAD, 0, (frame * rot_speed + -90) * DEG2RAD};
+            // ScePspFVector3 model_rot = {-90 * (GU_PI/180.0f), 0, (-90) * (GU_PI/180.0f)};
+            // float scale = (sin((float)frame / 10.0f) + 1.0f) * 100;
+            ScePspFVector3 model_scale = {scale,scale,scale};
+            sceGumTranslate(&model_pos);
+            sceGumScale(&model_scale);
+            sceGumRotateXYZ(&model_rot);
 
 
-        // build_skeleton( iqm_skeleton, iqm_model, framegroup_idx, frametime);
-        // log_printf("Building skeleton with anim.\n");
-        build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-        // log_printf("Done building skeleton with anim.\n");
-        // Process FTE animation events elapsed between the last and current frame
-        // process_anim_events( iqm_model, framegroup_idx, prev_frametime, cur_frametime, event_callback);
-        // Transform the model vertices to model-space using the skeleton's current pose matrices
-        // log_printf("Applying skeleton to mesh.\n");
-        apply_skeleton_pose( iqm_skeleton, iqm_model);
-        // log_printf("Done applying skeleton to mesh.\n");
-        // --------------------------------------------------------------------
+            // -----------------------------------
+            // Translate IQM model data to PSP format:
+            // FIXME - This is bad...
+            // -----------------------------------
+            sceGuTexMode(GU_PSM_8888,0,0,0);
+            sceGuTexImage(0,zombie_tex->width,zombie_tex->height,zombie_tex->width,zombie_tex->data);
+            sceGuTexFunc(GU_TFX_ADD,GU_TCC_RGB);
+            sceGuTexEnvColor(0xffff00);
+            sceGuTexFilter(GU_LINEAR, GU_LINEAR);
+            sceGuTexScale(1.0f,1.0f);
+            sceGuTexOffset(0.0f,0.0f);
+            sceGuAmbientColor(0xffffffff);
 
 
-        // for(unsigned int i = 0; i < iqm_model->n_submeshes; i++) {
-        unsigned int mesh_idx = ((unsigned int)((frame / 10.0f)) % iqm_model->n_meshes);
- 
-        // for(unsigned int i = mesh_idx; i < mesh_idx+1; i++) {
-        for(unsigned int i = 0; i < iqm_model->n_meshes; i++) {
-            uint16_t *mesh_tri_vert_idxs = iqm_model->meshes[i].tri_verts;
-            // unsigned int mesh_n_tri_verts = iqm_model->meshes[i].n_tri_verts;
-            vertex_t *mesh_verts = iqm_model->meshes[i].verts;
-            unsigned int mesh_n_tris = iqm_model->meshes[i].n_tris;
-            unsigned int mesh_n_verts = iqm_model->meshes[i].n_verts;
-            // unsigned int mesh_first_vert = iqm_model->meshes[i].first_vert;
-
-            // -----------------–-----------------–-----------------–----------
-            // Draw the mesh
-            // -----------------–-----------------–-----------------–----------
-            // sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_tris * 3, mesh_tri_vert_idxs, mesh_verts);
-            // -----------------–-----------------–-----------------–----------
 
 
-            // -----------------–-----------------–-----------------–----------
-            // Draw the submeshes
-            // -----------------–-----------------–-----------------–----------
-            for(int submesh_idx = 0; submesh_idx < iqm_model->meshes[i].n_submeshes; submesh_idx++) {
-                // TODO - Bind all of the submesh bone matrices
-                // uint8_t n_skinning_bones = 0;
-                // uint8_t skinning_bone_idxs[8];
-                for(int submesh_bone_idx = 0; submesh_bone_idx < iqm_model->meshes[i].submeshes[submesh_idx].n_skinning_bones; submesh_bone_idx++) {
-                    // Get the index into the skeleton list of bones:
-                    int bone_idx = iqm_model->meshes[i].submeshes[submesh_idx].skinning_bone_idxs[submesh_bone_idx];
-                    mat3x4_t *bone_mat3x4 = &iqm_skeleton->bone_transforms[bone_idx];
+            const int DRAW_MODE_SOFTWARE_SKINNING = 1;
+            const int DRAW_MODE_HARDWARE_SKINNING = 2;
+            const int DRAW_MODE_STATIC = 3;
+            // int draw_mode = DRAW_MODE_SOFTWARE_SKINNING;
+            // int draw_mode = DRAW_MODE_HARDWARE_SKINNING;
+            int draw_mode = DRAW_MODE_STATIC;
 
-                    // Translate the mat3x4_t bone transform matrix to ScePspFMatrix4
-                    ScePspFMatrix4 bone_mat;
 
-                    // ScePspFMatrix4 Internal layout:
-                    // [ m.x.x  m.y.x  m.z.x  m.w.x ]
-                    // [ m.x.y  m.y.y  m.z.y  m.w.y ]
-                    // [ m.x.z  m.y.z  m.z.z  m.w.z ]
-                    // [ m.x.w  m.y.w  m.z.w  m.w.w ]
+            // --------------------------------------------------------------------
+            // Updating the model's animation / drawing state
+            // --------------------------------------------------------------------
+            frametime = (frame / 60.0f); // 60 FPS animation
+            // frametime = 0;
+            // Set the skeleton's current pose matrices from animation data
 
-                    // Ident
-                    // bone_mat.x.x = 1.0f;
-                    // bone_mat.y.y = 1.0f;
-                    // bone_mat.z.z = 1.0f;
-                    // bone_mat.w.w = 1.0f;
 
-                    // Actual pose matrices
-                    bone_mat.x.x = bone_mat3x4->m[0];
-                    bone_mat.x.y = bone_mat3x4->m[1];
-                    bone_mat.x.z = bone_mat3x4->m[2];
+            // build_skeleton( iqm_skeleton, iqm_model, framegroup_idx, frametime);
+            if(draw_mode == DRAW_MODE_HARDWARE_SKINNING || draw_mode == DRAW_MODE_SOFTWARE_SKINNING) {
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+            }
+            // Process FTE animation events elapsed between the last and current frame
+            // process_anim_events( iqm_model, framegroup_idx, prev_frametime, cur_frametime, event_callback);
+            if(draw_mode == DRAW_MODE_SOFTWARE_SKINNING) {
+                apply_skeleton_pose( iqm_skeleton, iqm_model);
+            }
+            // Transform the model vertices to model-space using the skeleton's current pose matrices
+            // --------------------------------------------------------------------
 
-                    bone_mat.y.x = bone_mat3x4->m[3];
-                    bone_mat.y.y = bone_mat3x4->m[4];
-                    bone_mat.y.z = bone_mat3x4->m[5];
 
-                    bone_mat.z.x = bone_mat3x4->m[6];
-                    bone_mat.z.y = bone_mat3x4->m[7];
-                    bone_mat.z.z = bone_mat3x4->m[8];
 
-                    bone_mat.w.x = bone_mat3x4->m[9];
-                    bone_mat.w.y = bone_mat3x4->m[10];
-                    bone_mat.w.z = bone_mat3x4->m[11];
-                    bone_mat.w.w = 1.0f;
 
-                    sceGuBoneMatrix(submesh_bone_idx, &bone_mat);
+
+            // for(unsigned int i = 0; i < iqm_model->n_submeshes; i++) {
+            unsigned int mesh_idx = ((unsigned int)((frame / 10.0f)) % iqm_model->n_meshes);
+
+
+            // for(unsigned int i = mesh_idx; i < mesh_idx+1; i++) {
+            for(unsigned int i = 0; i < iqm_model->n_meshes; i++) {
+                uint16_t *mesh_tri_vert_idxs = iqm_model->meshes[i].tri_verts;
+                // unsigned int mesh_n_tri_verts = iqm_model->meshes[i].n_tri_verts;
+                vertex_t *mesh_verts = iqm_model->meshes[i].verts;
+                unsigned int mesh_n_tris = iqm_model->meshes[i].n_tris;
+                unsigned int mesh_n_verts = iqm_model->meshes[i].n_verts;
+                // unsigned int mesh_first_vert = iqm_model->meshes[i].first_vert;
+
+
+                if(draw_mode == DRAW_MODE_SOFTWARE_SKINNING || draw_mode == DRAW_MODE_STATIC) {
+                    // -----------------–-----------------–-----------------–----------
+                    // Draw the mesh
+                    // -----------------–-----------------–-----------------–----------
+                    sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_tris * 3, mesh_tri_vert_idxs, mesh_verts);
+                    // -----------------–-----------------–-----------------–----------
                 }
 
-                unsigned int submesh_n_tris = iqm_model->meshes[i].submeshes[submesh_idx].n_tris;
-                uint16_t *submesh_tri_vert_idxs = iqm_model->meshes[i].submeshes[submesh_idx].tri_verts;
-                skinning_vertex_t *submesh_verts = iqm_model->meshes[i].submeshes[submesh_idx].skinning_verts;
 
-                sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
-                    submesh_n_tris * 3, 
-                    submesh_tri_vert_idxs, 
-                    submesh_verts
-                );
+                if(draw_mode == DRAW_MODE_HARDWARE_SKINNING) {
+                    // -----------------–-----------------–-----------------–----------
+                    // Draw the submeshes
+                    // -----------------–-----------------–-----------------–----------
+                    for(int submesh_idx = 0; submesh_idx < iqm_model->meshes[i].n_submeshes; submesh_idx++) {
+                        // TODO - Bind all of the submesh bone matrices
+                        // uint8_t n_skinning_bones = 0;
+                        // uint8_t skinning_bone_idxs[8];
+                        for(int submesh_bone_idx = 0; submesh_bone_idx < iqm_model->meshes[i].submeshes[submesh_idx].n_skinning_bones; submesh_bone_idx++) {
+                            // Get the index into the skeleton list of bones:
+                            int bone_idx = iqm_model->meshes[i].submeshes[submesh_idx].skinning_bone_idxs[submesh_bone_idx];
+                            mat3x4_t *bone_mat3x4 = &iqm_skeleton->bone_transforms[bone_idx];
+
+                            // Translate the mat3x4_t bone transform matrix to ScePspFMatrix4
+                            ScePspFMatrix4 bone_mat;
+
+                            // ScePspFMatrix4 Internal layout:
+                            // [ m.x.x  m.y.x  m.z.x  m.w.x ]
+                            // [ m.x.y  m.y.y  m.z.y  m.w.y ]
+                            // [ m.x.z  m.y.z  m.z.z  m.w.z ]
+                            // [ m.x.w  m.y.w  m.z.w  m.w.w ]
+
+                            // Identity matrix
+                            // bone_mat.x.x = 1.0f;
+                            // bone_mat.x.y = 0.0f;
+                            // bone_mat.x.z = 0.0f;
+                            // bone_mat.x.w = 0.0f;
+                            // bone_mat.y.x = 0.0f;
+                            // bone_mat.y.y = 1.0f;
+                            // bone_mat.y.z = 0.0f;
+                            // bone_mat.y.w = 0.0f;
+                            // bone_mat.z.x = 0.0f;
+                            // bone_mat.z.y = 0.0f;
+                            // bone_mat.z.z = 1.0f;
+                            // bone_mat.z.w = 0.0f;
+                            // bone_mat.w.x = 0.0f;
+                            // bone_mat.w.y = 0.0f;
+                            // bone_mat.w.z = 0.0f;
+                            // bone_mat.w.w = 1.0f;
+
+                            // Actual pose matrices
+                            bone_mat.x.x = bone_mat3x4->m[0];
+                            bone_mat.x.y = bone_mat3x4->m[1];
+                            bone_mat.x.z = bone_mat3x4->m[2];
+                            bone_mat.x.w = 0.0f;
+                            bone_mat.y.x = bone_mat3x4->m[3];
+                            bone_mat.y.y = bone_mat3x4->m[4];
+                            bone_mat.y.z = bone_mat3x4->m[5];
+                            bone_mat.y.w = 0.0f;
+                            bone_mat.z.x = bone_mat3x4->m[6];
+                            bone_mat.z.y = bone_mat3x4->m[7];
+                            bone_mat.z.z = bone_mat3x4->m[8];
+                            bone_mat.z.w = 0.0f;
+                            bone_mat.w.x = bone_mat3x4->m[9];
+                            bone_mat.w.y = bone_mat3x4->m[10];
+                            bone_mat.w.z = bone_mat3x4->m[11];
+                            bone_mat.w.w = 1.0f;
+
+                            sceGuBoneMatrix(submesh_bone_idx, &bone_mat);
+                        }
+
+                        unsigned int submesh_n_tris = iqm_model->meshes[i].submeshes[submesh_idx].n_tris;
+                        uint16_t *submesh_tri_vert_idxs = iqm_model->meshes[i].submeshes[submesh_idx].tri_verts;
+                        skinning_vertex_t *submesh_verts = iqm_model->meshes[i].submeshes[submesh_idx].skinning_verts;
+
+                        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                            submesh_n_tris * 3, 
+                            submesh_tri_vert_idxs, 
+                            submesh_verts
+                        );
+                    }
+                }
+                // -----------------–-----------------–-----------------–----------
             }
-
-            // -----------------–-----------------–-----------------–----------
+            // --------------------------------------------------------------------
         }
-        // --------------------------------------------------------------------
 
 
         sceGuFinish();
@@ -353,10 +440,20 @@ int main(int argc, char *argv[]) {
         // pspDebugScreenSetOffset((int) display_buffer);
 
         pspDebugScreenSetXY(1,3);
-        int vert_idx = frame % (iqm_model->meshes[mesh_idx].n_verts);
-        pspDebugScreenPrintf("mesh[%d] n_tris: %ld, n_verts: %ld", mesh_idx, iqm_model->meshes[mesh_idx].n_tris, iqm_model->meshes[mesh_idx].n_verts);
-        pspDebugScreenSetXY(1,4);
-        pspDebugScreenPrintf("vertex[%d]: (%.3f,%.3f,%.3f) (%.3f, %.3f)", vert_idx, iqm_model->meshes[mesh_idx].verts[vert_idx].x,iqm_model->meshes[mesh_idx].verts[vert_idx].y,iqm_model->meshes[mesh_idx].verts[vert_idx].z,iqm_model->meshes[mesh_idx].verts[vert_idx].u,iqm_model->meshes[mesh_idx].verts[vert_idx].v);
+        // pspDebugScreenPrintf("hello");
+
+        double cur_epoch_time = get_epoch_time();
+        double cur_fps = (frame) / (cur_epoch_time - start_epoch_time);
+        pspDebugScreenPrintf("FPS: %.2f", cur_fps);
+
+
+        
+
+
+        // int vert_idx = frame % (iqm_model->meshes[mesh_idx].n_verts);
+        // pspDebugScreenPrintf("mesh[%d] n_tris: %ld, n_verts: %ld", mesh_idx, iqm_model->meshes[mesh_idx].n_tris, iqm_model->meshes[mesh_idx].n_verts);
+        // pspDebugScreenSetXY(1,4);
+        // pspDebugScreenPrintf("vertex[%d]: (%.3f,%.3f,%.3f) (%.3f, %.3f)", vert_idx, iqm_model->meshes[mesh_idx].verts[vert_idx].x,iqm_model->meshes[mesh_idx].verts[vert_idx].y,iqm_model->meshes[mesh_idx].verts[vert_idx].z,iqm_model->meshes[mesh_idx].verts[vert_idx].u,iqm_model->meshes[mesh_idx].verts[vert_idx].v);
 
         // pspDebugScreenSetXY(40,3);  
         // pspDebugScreenPrintf("IQM Version: %d", iqm_header->version);
