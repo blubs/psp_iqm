@@ -12,6 +12,7 @@
 #include <pspdebug.h>
 #include <pspgu.h>
 #include <pspgum.h>
+#include <pspctrl.h>
 
 
 #include "callbacks.h"
@@ -39,7 +40,8 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 #define BUF_WIDTH (512)
 #define SCR_WIDTH (480)
 #define SCR_HEIGHT (272)
-static unsigned int __attribute__((aligned(16))) display_list[262144];
+// static unsigned int __attribute__((aligned(16))) display_list[262144];
+static unsigned int __attribute__((aligned(16))) display_list[524288];
 
 
 void *draw_buffer;
@@ -141,6 +143,230 @@ double get_epoch_time() {
 }
 
 
+// ----------------------------------------------------------------------------
+// Drawing functions
+// ----------------------------------------------------------------------------
+void draw_skeletal_model_indexed_swskinning_float32(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh->n_tris * 3, mesh->tri_verts, mesh->verts);
+    }
+}
+
+
+void draw_skeletal_model_indexed_hwskinning_float32(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            for(int submesh_bone_idx = 0; submesh_bone_idx < submesh->n_skinning_bones; submesh_bone_idx++) {
+                // Get the index into the skeleton list of bones:
+                int bone_idx = submesh->skinning_bone_idxs[submesh_bone_idx];
+                mat3x4_t *bone_mat3x4 = &(skeleton->bone_transforms[bone_idx]);
+
+                // Translate the mat3x4_t bone transform matrix to ScePspFMatrix4
+                ScePspFMatrix4 bone_mat;
+
+                // ScePspFMatrix4 Internal layout:
+                // [ m.x.x  m.y.x  m.z.x  m.w.x ]
+                // [ m.x.y  m.y.y  m.z.y  m.w.y ]
+                // [ m.x.z  m.y.z  m.z.z  m.w.z ]
+                // [ m.x.w  m.y.w  m.z.w  m.w.w ]
+
+                // Identity Matrix
+                // bone_mat.x.x = 1.0f; bone_mat.y.x = 0.0f; bone_mat.z.x = 0.0f; bone_mat.w.x = 0.0f;
+                // bone_mat.x.y = 0.0f; bone_mat.y.y = 1.0f; bone_mat.z.y = 0.0f; bone_mat.w.y = 0.0f;
+                // bone_mat.x.z = 0.0f; bone_mat.y.z = 0.0f; bone_mat.z.z = 1.0f; bone_mat.w.z = 0.0f;
+                // bone_mat.x.w = 0.0f; bone_mat.y.w = 0.0f; bone_mat.z.w = 0.0f; bone_mat.w.w = 1.0f;
+
+                // Pose Matrix
+                bone_mat.x.x = bone_mat3x4->m[0];   bone_mat.y.x = bone_mat3x4->m[3];   bone_mat.z.x = bone_mat3x4->m[6];   bone_mat.w.x = bone_mat3x4->m[9];
+                bone_mat.x.y = bone_mat3x4->m[1];   bone_mat.y.y = bone_mat3x4->m[4];   bone_mat.z.y = bone_mat3x4->m[7];   bone_mat.w.y = bone_mat3x4->m[10];
+                bone_mat.x.z = bone_mat3x4->m[2];   bone_mat.y.z = bone_mat3x4->m[5];   bone_mat.z.z = bone_mat3x4->m[8];   bone_mat.w.z = bone_mat3x4->m[11];
+                bone_mat.x.w = 0.0f;                bone_mat.y.w = 0.0f;                bone_mat.z.w = 0.0f;                bone_mat.w.w = 1.0f;
+                sceGuBoneMatrix(submesh_bone_idx, &bone_mat);
+            }
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                submesh->tri_verts, 
+                submesh->skinning_verts
+            );
+        }
+    }
+}
+
+
+void draw_skeletal_model_indexed_swskinning_int16() {
+
+}
+
+
+void draw_skeletal_model_indexed_hwskinning_int16() {
+
+}
+
+
+void draw_skeletal_model_indexed_swskinning_int16_int8weights() {
+
+}
+
+
+void draw_skeletal_model_indexed_hwskinning_int16_int8weights() {
+
+}
+
+
+void draw_skeletal_model_indexed_swblending_float32(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        // Fake software blending
+        for(int j = 0; j < mesh->n_verts; j++) {
+            mesh->verts[j].x = 0.5 * (mesh->verts[j].x + mesh->verts[j].x);
+            mesh->verts[j].y = 0.5 * (mesh->verts[j].y + mesh->verts[j].y);
+            mesh->verts[j].z = 0.5 * (mesh->verts[j].z + mesh->verts[j].z);
+        }
+        // GU_COLOR_8888
+        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh->n_tris * 3, mesh->tri_verts, mesh->verts);
+    }
+}
+
+
+void draw_skeletal_model_indexed_hwblending_float32(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        vertex_t * const verts_data = static_cast<vertex_t*>(sceGuGetMemory(sizeof(vertex_t) * mesh->n_verts * 2));
+        for(int j = 0; j < mesh->n_verts; j++) {
+            // Static fields:
+            verts_data[j*2 + 0].u = mesh->verts[j].u;
+            verts_data[j*2 + 0].v = mesh->verts[j].v;
+            verts_data[j*2 + 1].u = mesh->verts[j].u;
+            verts_data[j*2 + 1].v = mesh->verts[j].v;
+
+            // Fake blending: (Pulled from the same mesh / vertices)
+            verts_data[j*2 + 0].x       = mesh->verts[j].x;
+            verts_data[j*2 + 0].y       = mesh->verts[j].y;
+            verts_data[j*2 + 0].z       = mesh->verts[j].z;
+            verts_data[j*2 + 0].nor_x   = mesh->verts[j].nor_x;
+            verts_data[j*2 + 0].nor_y   = mesh->verts[j].nor_y;
+            verts_data[j*2 + 0].nor_z   = mesh->verts[j].nor_z;
+            verts_data[j*2 + 1].x       = mesh->verts[j].x;
+            verts_data[j*2 + 1].y       = mesh->verts[j].y;
+            verts_data[j*2 + 1].z       = mesh->verts[j].z;
+            verts_data[j*2 + 1].nor_x   = mesh->verts[j].nor_x;
+            verts_data[j*2 + 1].nor_y   = mesh->verts[j].nor_y;
+            verts_data[j*2 + 1].nor_z   = mesh->verts[j].nor_z;
+        }
+
+        // GU_COLOR_8888
+        float blend = 0.5f;
+        sceGuMorphWeight(0, 1 - blend);
+        sceGuMorphWeight(1, blend);
+        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D|GU_VERTICES(2), mesh->n_tris * 3, mesh->tri_verts, verts_data);
+    }
+}
+
+
+void draw_skeletal_model_indexed_swblending_int16(skeletal_model_t *model) {
+
+}
+
+
+void draw_skeletal_model_indexed_hwblending_int16() {
+
+}
+
+
+void draw_skeletal_model_indexed_static_float32(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh->n_tris * 3, mesh->tri_verts, mesh->verts);
+    }
+}
+
+
+void draw_skeletal_model_indexed_static_int16(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, mesh->n_tris * 3, mesh->tri_verts, mesh->vert16s);
+    }
+}
+
+
+void draw_skeletal_model_unindexed_swskinning_float32() {
+
+}
+
+
+void draw_skeletal_model_unindexed_hwskinning_float32() {
+
+}
+
+
+void draw_skeletal_model_unindexed_swskinning_int16() {
+
+}
+
+
+void draw_skeletal_model_unindexed_hwskinning_int16() {
+
+}
+
+
+void draw_skeletal_model_unindexed_swskinning_int16_int8weights() {
+
+}
+
+
+void draw_skeletal_model_unindexed_hwskinning_int16_int8weights() {
+
+}
+
+
+void draw_skeletal_model_unindexed_swblending_float32() {
+
+}
+
+
+void draw_skeletal_model_unindexed_hwblending_float32() {
+
+}
+
+
+void draw_skeletal_model_unindexed_swblending_int16() {
+
+}
+
+
+void draw_skeletal_model_unindexed_hwblending_int16() {
+
+}
+
+
+void draw_skeletal_model_unindexed_static_float32() {
+
+}
+
+
+void draw_skeletal_model_unindexed_static_int16() {
+
+}
+// ----------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
 int main(int argc, char *argv[]) {
     log_printf("Starting program\n");
     setupCallbacks();
@@ -197,7 +423,17 @@ int main(int argc, char *argv[]) {
     load_png_file("assets/zombie_tex_0.png", zombie_tex);
     load_png_file("assets/eyeglow_tex.png", eyeglow_tex);
 
+    // texture_t *envmap_tex = (texture_t*) malloc(sizeof(texture_t));
+    // load_png_file("assets/env/ndulf.png", envmap_tex);
 
+    // --------------------------------------------
+    // Setup PSP input    
+    // --------------------------------------------
+    SceCtrlData cur_input;
+    uint32_t prev_input_buttons = 0;
+    sceCtrlSetSamplingCycle(0);
+    sceCtrlSetSamplingMode(0);
+    // --------------------------------------------
 
     void *cur_draw_buffer = draw_buffer;
     fclose(f);
@@ -205,6 +441,38 @@ int main(int argc, char *argv[]) {
     float frametime = 0;
 
     double start_epoch_time = get_epoch_time();
+    // The number of frames over which to average the FPS
+#define FPS_FRAMES_WINDOW 10
+    double fps_frametimes[FPS_FRAMES_WINDOW];
+    for(int i = 0; i < FPS_FRAMES_WINDOW; i++) {
+        fps_frametimes[i] = start_epoch_time;
+    }
+
+
+    const int DRAW_MODE_SOFTWARE_SKINNING = 0;
+    const int DRAW_MODE_HARDWARE_SKINNING = 1;
+    const int DRAW_MODE_STATIC = 2;
+    const int DRAW_MODE_STATIC_16B = 3;
+    const int DRAW_MODE_STATIC_SOFTWARE_BLEND = 4;
+    const int DRAW_MODE_STATIC_HARDWARE_BLEND = 5;
+    // const int DRAW_MODE_STATIC_16B_SOFTWARE_BLEND = 6;
+    // const int DRAW_MODE_STATIC_16B_HARDWARE_BLEND = 7;
+    const int N_DRAW_MODES = 6;
+    int draw_mode = DRAW_MODE_SOFTWARE_SKINNING;
+    // int draw_mode = DRAW_MODE_HARDWARE_SKINNING;
+    // int draw_mode = DRAW_MODE_STATIC;
+    // int draw_mode = DRAW_MODE_STATIC_SOFTWARE_BLEND;
+    // int draw_mode = DRAW_MODE_STATIC_HARDWARE_BLEND;
+
+    // TODO - Replace with these options:
+    // Options:
+    //      animation: sw blending, hw blending, hw skinning, sw skinning, static
+    //      vertex struct size: float32, int16
+    //      skinning weight struct size: int16, int8
+    //      indexing: yes, no
+
+
+
 
     while(running()) {
         const float DEG2RAD = (GU_PI/180.0f);
@@ -276,9 +544,45 @@ int main(int argc, char *argv[]) {
             // ScePspFVector3 model_rot = {-90 * (GU_PI/180.0f), 0, (-90) * (GU_PI/180.0f)};
             // float scale = (sin((float)frame / 10.0f) + 1.0f) * 100;
             ScePspFVector3 model_scale = {scale,scale,scale};
+
+
             sceGumTranslate(&model_pos);
             sceGumScale(&model_scale);
             sceGumRotateXYZ(&model_rot);
+
+            if(draw_mode == DRAW_MODE_STATIC_16B) {
+                // Undo the float32 -> int16 scaling
+                // Only do it once for all meshes
+                float undo_scale = 1.0f / iqm_model->meshes[0].verts_unit_scale;
+                ScePspFVector3 undo_scale_vec3 = {undo_scale,undo_scale,undo_scale};
+                sceGumScale(&undo_scale_vec3);
+            }
+
+            // -----------------------------------
+            // Set up envmap texture
+            // -----------------------------------
+            // sceGuTexMode(GU_PSM_8888,0,0,0);
+            // sceGuTexImage(0,envmap_tex->width,envmap_tex->height,envmap_tex->width,envmap_tex->data);
+            // sceGuTexFunc(GU_TFX_ADD, GU_TCC_RGB);
+            // sceGuTexFilter(GU_LINEAR,GU_LINEAR);
+
+            // // float envmap_angle = -2.0f * frame * (GU_PI / 180.0f);
+            // float envmap_angle = -2.0f * (GU_PI / 180.0f);
+            // float envmap_cos = cosf(envmap_angle);
+            // float envmap_sin = sinf(envmap_angle);
+            // ScePspFVector3 envmap_matrix_columns[2] = {
+            //     {  envmap_cos, envmap_sin, 0.0f,},
+            //     { -envmap_sin, envmap_cos, 0.0f }
+            // };
+
+            // sceGuLight( 1, GU_DIRECTIONAL, GU_DIFFUSE, &envmap_matrix_columns[0]);
+            // sceGuLight( 2, GU_DIRECTIONAL, GU_DIFFUSE, &envmap_matrix_columns[1]);
+            // sceGuTexMapMode(
+            //     GU_ENVIRONMENT_MAP,
+            //     1,
+            //     2
+            // );
+            // -----------------------------------
 
 
             // -----------------------------------
@@ -295,14 +599,9 @@ int main(int argc, char *argv[]) {
             sceGuAmbientColor(0xffffffff);
 
 
+            // Set primitive color for all vertices:
+            sceGuColor(0x00000000);
 
-
-            const int DRAW_MODE_SOFTWARE_SKINNING = 1;
-            const int DRAW_MODE_HARDWARE_SKINNING = 2;
-            const int DRAW_MODE_STATIC = 3;
-            // int draw_mode = DRAW_MODE_SOFTWARE_SKINNING;
-            // int draw_mode = DRAW_MODE_HARDWARE_SKINNING;
-            int draw_mode = DRAW_MODE_STATIC;
 
 
             // --------------------------------------------------------------------
@@ -333,99 +632,58 @@ int main(int argc, char *argv[]) {
             unsigned int mesh_idx = ((unsigned int)((frame / 10.0f)) % iqm_model->n_meshes);
 
 
-            // for(unsigned int i = mesh_idx; i < mesh_idx+1; i++) {
-            for(unsigned int i = 0; i < iqm_model->n_meshes; i++) {
-                uint16_t *mesh_tri_vert_idxs = iqm_model->meshes[i].tri_verts;
-                // unsigned int mesh_n_tri_verts = iqm_model->meshes[i].n_tri_verts;
-                vertex_t *mesh_verts = iqm_model->meshes[i].verts;
-                unsigned int mesh_n_tris = iqm_model->meshes[i].n_tris;
-                unsigned int mesh_n_verts = iqm_model->meshes[i].n_verts;
-                // unsigned int mesh_first_vert = iqm_model->meshes[i].first_vert;
+            // Let's list all of the draw mode functions we need...
+            // void draw_skeletal_model_indexed_swskinning_float32();
+            // void draw_skeletal_model_indexed_hwskinning_float32();
+            // void draw_skeletal_model_indexed_swskinning_int16();
+            // void draw_skeletal_model_indexed_hwskinning_int16();
+            // void draw_skeletal_model_indexed_swskinning_int16_int8weights();
+            // void draw_skeletal_model_indexed_hwskinning_int16_int8weights();
+            // void draw_skeletal_model_indexed_swblending_float32();
+            // void draw_skeletal_model_indexed_hwblending_float32();
+            // void draw_skeletal_model_indexed_swblending_int16();
+            // void draw_skeletal_model_indexed_hwblending_int16();
+            // void draw_skeletal_model_indexed_static_float32();
+            // void draw_skeletal_model_indexed_static_int16();
+            // void draw_skeletal_model_unindexed_swskinning_float32();
+            // void draw_skeletal_model_unindexed_hwskinning_float32();
+            // void draw_skeletal_model_unindexed_swskinning_int16();
+            // void draw_skeletal_model_unindexed_hwskinning_int16();
+            // void draw_skeletal_model_unindexed_swskinning_int16_int8weights();
+            // void draw_skeletal_model_unindexed_hwskinning_int16_int8weights();
+            // void draw_skeletal_model_unindexed_swblending_float32();
+            // void draw_skeletal_model_unindexed_hwblending_float32();
+            // void draw_skeletal_model_unindexed_swblending_int16();
+            // void draw_skeletal_model_unindexed_hwblending_int16();
+            // void draw_skeletal_model_unindexed_static_float32();
+            // void draw_skeletal_model_unindexed_static_int16();
 
+            
+            // Options:
+            //      animation: sw blending, hw blending, hw skinning, sw skinning, static
+            //      vertex struct size: float32, int16
+            //      skinning weight struct size: int16, int8
+            //      indexing: yes, no
 
-                if(draw_mode == DRAW_MODE_SOFTWARE_SKINNING || draw_mode == DRAW_MODE_STATIC) {
-                    // -----------------–-----------------–-----------------–----------
-                    // Draw the mesh
-                    // -----------------–-----------------–-----------------–----------
-                    sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh_n_tris * 3, mesh_tri_vert_idxs, mesh_verts);
-                    // -----------------–-----------------–-----------------–----------
-                }
-
-
-                if(draw_mode == DRAW_MODE_HARDWARE_SKINNING) {
-                    // -----------------–-----------------–-----------------–----------
-                    // Draw the submeshes
-                    // -----------------–-----------------–-----------------–----------
-                    for(int submesh_idx = 0; submesh_idx < iqm_model->meshes[i].n_submeshes; submesh_idx++) {
-                        // TODO - Bind all of the submesh bone matrices
-                        // uint8_t n_skinning_bones = 0;
-                        // uint8_t skinning_bone_idxs[8];
-                        for(int submesh_bone_idx = 0; submesh_bone_idx < iqm_model->meshes[i].submeshes[submesh_idx].n_skinning_bones; submesh_bone_idx++) {
-                            // Get the index into the skeleton list of bones:
-                            int bone_idx = iqm_model->meshes[i].submeshes[submesh_idx].skinning_bone_idxs[submesh_bone_idx];
-                            mat3x4_t *bone_mat3x4 = &iqm_skeleton->bone_transforms[bone_idx];
-
-                            // Translate the mat3x4_t bone transform matrix to ScePspFMatrix4
-                            ScePspFMatrix4 bone_mat;
-
-                            // ScePspFMatrix4 Internal layout:
-                            // [ m.x.x  m.y.x  m.z.x  m.w.x ]
-                            // [ m.x.y  m.y.y  m.z.y  m.w.y ]
-                            // [ m.x.z  m.y.z  m.z.z  m.w.z ]
-                            // [ m.x.w  m.y.w  m.z.w  m.w.w ]
-
-                            // Identity matrix
-                            // bone_mat.x.x = 1.0f;
-                            // bone_mat.x.y = 0.0f;
-                            // bone_mat.x.z = 0.0f;
-                            // bone_mat.x.w = 0.0f;
-                            // bone_mat.y.x = 0.0f;
-                            // bone_mat.y.y = 1.0f;
-                            // bone_mat.y.z = 0.0f;
-                            // bone_mat.y.w = 0.0f;
-                            // bone_mat.z.x = 0.0f;
-                            // bone_mat.z.y = 0.0f;
-                            // bone_mat.z.z = 1.0f;
-                            // bone_mat.z.w = 0.0f;
-                            // bone_mat.w.x = 0.0f;
-                            // bone_mat.w.y = 0.0f;
-                            // bone_mat.w.z = 0.0f;
-                            // bone_mat.w.w = 1.0f;
-
-                            // Actual pose matrices
-                            bone_mat.x.x = bone_mat3x4->m[0];
-                            bone_mat.x.y = bone_mat3x4->m[1];
-                            bone_mat.x.z = bone_mat3x4->m[2];
-                            bone_mat.x.w = 0.0f;
-                            bone_mat.y.x = bone_mat3x4->m[3];
-                            bone_mat.y.y = bone_mat3x4->m[4];
-                            bone_mat.y.z = bone_mat3x4->m[5];
-                            bone_mat.y.w = 0.0f;
-                            bone_mat.z.x = bone_mat3x4->m[6];
-                            bone_mat.z.y = bone_mat3x4->m[7];
-                            bone_mat.z.z = bone_mat3x4->m[8];
-                            bone_mat.z.w = 0.0f;
-                            bone_mat.w.x = bone_mat3x4->m[9];
-                            bone_mat.w.y = bone_mat3x4->m[10];
-                            bone_mat.w.z = bone_mat3x4->m[11];
-                            bone_mat.w.w = 1.0f;
-
-                            sceGuBoneMatrix(submesh_bone_idx, &bone_mat);
-                        }
-
-                        unsigned int submesh_n_tris = iqm_model->meshes[i].submeshes[submesh_idx].n_tris;
-                        uint16_t *submesh_tri_vert_idxs = iqm_model->meshes[i].submeshes[submesh_idx].tri_verts;
-                        skinning_vertex_t *submesh_verts = iqm_model->meshes[i].submeshes[submesh_idx].skinning_verts;
-
-                        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
-                            submesh_n_tris * 3, 
-                            submesh_tri_vert_idxs, 
-                            submesh_verts
-                        );
-                    }
-                }
-                // -----------------–-----------------–-----------------–----------
+            if(draw_mode == DRAW_MODE_SOFTWARE_SKINNING) {
+                draw_skeletal_model_indexed_swskinning_float32(iqm_model);
             }
+            else if(draw_mode == DRAW_MODE_HARDWARE_SKINNING) {
+                draw_skeletal_model_indexed_hwskinning_float32(iqm_model, iqm_skeleton);
+            }
+            else if(draw_mode == DRAW_MODE_STATIC_SOFTWARE_BLEND) {
+                draw_skeletal_model_indexed_swblending_float32(iqm_model);
+            }
+            else if(draw_mode == DRAW_MODE_STATIC_HARDWARE_BLEND) {
+                draw_skeletal_model_indexed_hwblending_float32(iqm_model);
+            }
+            else if(draw_mode == DRAW_MODE_STATIC) {
+                draw_skeletal_model_indexed_static_float32(iqm_model);
+            }
+            else if(draw_mode == DRAW_MODE_STATIC_16B) {
+                draw_skeletal_model_indexed_static_int16(iqm_model);
+            }
+
             // --------------------------------------------------------------------
         }
 
@@ -440,12 +698,51 @@ int main(int argc, char *argv[]) {
         // pspDebugScreenSetOffset((int) display_buffer);
 
         pspDebugScreenSetXY(1,3);
+        switch(draw_mode) {
+            case DRAW_MODE_SOFTWARE_SKINNING:
+                pspDebugScreenPrintf("Draw mode: Software Skinning (%d)", draw_mode);
+                break;
+            case DRAW_MODE_HARDWARE_SKINNING:
+                pspDebugScreenPrintf("Draw mode: Hardware Skinning (%d)", draw_mode);
+                break;
+            case DRAW_MODE_STATIC:
+                pspDebugScreenPrintf("Draw mode: Static (%d)", draw_mode);
+                break;
+            case DRAW_MODE_STATIC_16B:
+                pspDebugScreenPrintf("Draw mode: Static 16-bit (%d)", draw_mode);
+                break;
+            case DRAW_MODE_STATIC_SOFTWARE_BLEND:
+                pspDebugScreenPrintf("Draw mode: Software Blending (%d)", draw_mode);
+                break;
+            case DRAW_MODE_STATIC_HARDWARE_BLEND:
+                pspDebugScreenPrintf("Draw mode: Hardware Blending (%d)", draw_mode);
+                break;
+            default:
+                pspDebugScreenPrintf("Draw mode: Unknown (%d)", draw_mode);
+                break;
+        }
+
+
+
+        pspDebugScreenSetXY(1,5);
         // pspDebugScreenPrintf("hello");
-
         double cur_epoch_time = get_epoch_time();
-        double cur_fps = (frame) / (cur_epoch_time - start_epoch_time);
-        pspDebugScreenPrintf("FPS: %.2f", cur_fps);
 
+        // --- Average FPS over the last `FPS_FRAMES_WINDOW` frames ---
+        int cur_frametime_idx = (frame) % FPS_FRAMES_WINDOW;
+        int oldest_frametime_idx = (frame + 1) % FPS_FRAMES_WINDOW;
+        fps_frametimes[cur_frametime_idx] = cur_epoch_time;
+        double elapsed_time = fps_frametimes[cur_frametime_idx] - fps_frametimes[oldest_frametime_idx];
+        double cur_fps =  (FPS_FRAMES_WINDOW - 1) / elapsed_time;
+        // pspDebugScreenPrintf("FPS: %.2f", cur_fps);
+        
+        // --- Overall average FPS ---
+        // double cur_epoch_time = get_epoch_time();
+        double overall_fps = (frame) / (cur_epoch_time - start_epoch_time); 
+        // double cur_fps = (frame) / (cur_epoch_time - start_epoch_time);
+        // pspDebugScreenPrintf("FPS: %.2f", cur_fps);
+
+        pspDebugScreenPrintf("FPS: %.2f (last %d frames), %.2f (overall)", cur_fps, FPS_FRAMES_WINDOW, overall_fps);
 
         
 
@@ -473,10 +770,32 @@ int main(int argc, char *argv[]) {
         // uint8_t *px_data = &((uint8_t*) (debug_tex->data))[pixel_idx * 4];
         // pspDebugScreenSetXY(20,6);
         // pspDebugScreenPrintf("tex pixel %d = RGBA(%d %d %d %d)", pixel_idx, px_data[0], px_data[1], px_data[2], px_data[3]);
-        sceDisplayWaitVblankStart();
+
+
+        // sceDisplayWaitVblankStart();
         cur_draw_buffer = sceGuSwapBuffers();
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
         frame += 1;
+
+
+
+
+        // ---------------------------------------------------
+        // Input handling
+        // ---------------------------------------------------
+        sceCtrlReadBufferPositive(&cur_input, 1);
+        if(prev_input_buttons != cur_input.Buttons) {
+            if(cur_input.Buttons & PSP_CTRL_LTRIGGER && !(prev_input_buttons & PSP_CTRL_LTRIGGER)) {
+                // Go back a draw mode
+                draw_mode = ((draw_mode - 1) + N_DRAW_MODES) % N_DRAW_MODES;
+            }
+            if(cur_input.Buttons & PSP_CTRL_RTRIGGER && !(prev_input_buttons & PSP_CTRL_RTRIGGER)) {
+                // Advance to next draw mode
+                draw_mode = (draw_mode + 1) % N_DRAW_MODES;
+            }
+        }
+        prev_input_buttons = cur_input.Buttons;
+        // ---------------------------------------------------
     }
 
     sceGuTerm();
