@@ -604,20 +604,48 @@ typedef struct alt_vertex16_s {
 } alt_vertex16_t;
 
 
-
-typedef struct alt_skinning_vertex16_s {
+typedef struct alt_skinning_vertex32_w16_s {
     // Bone skinning weights, one per bone.
-    uint16_t bone_weights[8];
+    int16_t bone_weights[8];
+    float u,v;
+    // uint32_t color;
+    float nor_x, nor_y, nor_z;
+    float x,y,z;
+} alt_skinning_vertex32_w16_t;
+
+typedef struct alt_skinning_vertex32_w8_s {
+    // Bone skinning weights, one per bone.
+    int8_t bone_weights[8];
+    float u,v;
+    // uint32_t color;
+    float nor_x, nor_y, nor_z;
+    float x,y,z;
+} alt_skinning_vertex32_w8_t;
+
+
+
+typedef struct alt_skinning_vertex16_w16_s {
+    // Bone skinning weights, one per bone.
+    int16_t bone_weights[8];
     int16_t u,v;
     // uint32_t color;
     int16_t nor_x, nor_y, nor_z;
     int16_t x,y,z;
-} alt_skinning_vertex16_t;
+} alt_skinning_vertex16_w16_t;
+
+typedef struct alt_skinning_vertex16_w32_s {
+    // Bone skinning weights, one per bone.
+    float bone_weights[8];
+    int16_t u,v;
+    // uint32_t color;
+    int16_t nor_x, nor_y, nor_z;
+    int16_t x,y,z;
+} alt_skinning_vertex16_w32_t;
 
 
 typedef struct alt_skinning_vertex16_w8_s {
     // Bone skinning weights, one per bone.
-    uint8_t bone_weights[8];
+    int8_t bone_weights[8];
     int16_t u,v;
     // uint32_t color;
     int16_t nor_x, nor_y, nor_z;
@@ -640,14 +668,20 @@ typedef struct skeletal_mesh_s {
     // ------------------------------------------------------------------------
     float verts_unit_scale; // For struct sizes that require vertices to be in [-1,1], this is the scaling value to undo that transform
     alt_vertex16_t *vert16s = nullptr; // Vertex struct with 16-bit data
-    alt_skinning_vertex16_t *skinning_vert16s = nullptr; // Vertex struct with 16-bit data and bone weights
+    alt_skinning_vertex32_w16_t *skinning_verts_w16 = nullptr; // float32 vertex struct with int16 bone weights
+    alt_skinning_vertex32_w8_t *skinning_verts_w8 = nullptr; // float32 vertex struct with int8 bone weights
+    alt_skinning_vertex16_w32_t *skinning_vert16s_w32 = nullptr; // Vertex struct with 16-bit data, but 32-bit bone weights
+    alt_skinning_vertex16_w16_t *skinning_vert16s_w16 = nullptr; // Vertex struct with 16-bit data and bone weights
     alt_skinning_vertex16_w8_t *skinning_vert16s_w8 = nullptr; // Vertex struct with 16-bit data, but 8-bit bone weights
 
-    uint32_t unindexed_n_verts; // Number of vertices
+    uint32_t n_unindexed_verts; // Number of vertices
     vertex_t *unindexed_verts = nullptr; // Vertex struct passed to GU for drawing
-    skinning_vertex_t *unindexed_skinning_verts = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
     alt_vertex16_t *unindexed_vert16s = nullptr; // Vertex struct with 16-bit data
-    alt_skinning_vertex16_t *unindexed_skinning_vert16s = nullptr; // Vertex struct with 16-bit data and bone weights
+    skinning_vertex_t *unindexed_skinning_vert32s_w32 = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
+    skinning_vertex_t *unindexed_skinning_vert32s_w16 = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
+    skinning_vertex_t *unindexed_skinning_vert32s_w8 = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
+    alt_skinning_vertex16_w16_t *unindexed_skinning_vert16s_w32 = nullptr; // Vertex struct with 16-bit data and bone weights
+    alt_skinning_vertex16_w16_t *unindexed_skinning_vert16s_w16 = nullptr; // Vertex struct with 16-bit data and bone weights
     alt_skinning_vertex16_w8_t *unindexed_skinning_vert16s_w8 = nullptr; // Vertex struct with 16-bit data, but 8-bit bone weights
     // ------------------------------------------------------------------------
 
@@ -656,7 +690,6 @@ typedef struct skeletal_mesh_s {
     uint8_t skinning_bone_idxs[8];
 
     uint32_t n_tris; // Number of triangles in mesh
-    // uint32_t n_tri_verts; // Number of triangle vertex indices. (n_tris * 3)
     uint16_t *tri_verts = nullptr; // Contains the vertex indices for each triangle
 
     // TODO - Geomset identifiers...
@@ -924,7 +957,7 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
             tri_n_bones[tri_idx] = 0;
 
             for(uint32_t tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++ ) {
-                int vert_idx = skel_model->meshes[i].tri_verts[(tri_idx * TRI_VERTS) + tri_vert_idx];
+                uint32_t vert_idx = skel_model->meshes[i].tri_verts[(tri_idx * TRI_VERTS) + tri_vert_idx];
                 // Loop through the vertex's referenced bones
                 for(int vert_bone_idx = 0; vert_bone_idx < VERT_BONES; vert_bone_idx++) {
                     uint8_t bone_idx = skel_model->meshes[i].vert_bone_idxs[vert_idx * VERT_BONES + vert_bone_idx];
@@ -1303,6 +1336,14 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
             }
 
 
+            // TEMP HACK DEBUG
+            // Set each veertex bone skinning weights to [1.0, 0.0, 0.0, ...]
+            // for(uint32_t vert_idx = 0; vert_idx < submesh_n_verts; vert_idx++) {
+            //     skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[0] = 1.0f;
+            //     for(int submesh_bone_idx = 1; submesh_bone_idx < SUBMESH_BONES; submesh_bone_idx++) {
+            //         skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[submesh_bone_idx] = 0.0f;
+            //     }
+            // }
 
             // Save the submesh's list of bone indices
             skel_model->meshes[i].submeshes[submesh_idx].n_skinning_bones = n_submesh_bones;
@@ -1324,6 +1365,34 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
             // ----------------------------------------------------------------
 
 
+            // -––-----------––-----------––-----------––-----------––---------
+            log_printf("Mesh %d submesh %d bones (%d): [", i, submesh_idx, n_submesh_bones);
+            for(int j = 0; j < SUBMESH_BONES; j++) {
+                log_printf("%d, ", submesh_bones[j]);
+            }
+            log_printf("]\n");
+            // // TODO - Print all verts for this submesh
+            // for(uint32_t vert_idx = 0; vert_idx < submesh_n_verts; vert_idx++) {
+            //     int mesh_vert_idx = submesh_mesh_vert_idxs[vert_idx];
+            //     log_printf("\tvert %d, bones {%d:%.2f, %d:%.2f, %d:%.2f, %d:%.2f} --> [%d:%.2f, %d:%.2f, %d:%.2f, %d:%.2f, %d:%.2f, %d:%.2f, %d:%.2f, %d:%.2f]\n", 
+            //         vert_idx, 
+            //         skel_model->meshes[i].vert_bone_idxs[mesh_vert_idx * VERT_BONES + 0], skel_model->meshes[i].vert_bone_weights[mesh_vert_idx * VERT_BONES + 0],
+            //         skel_model->meshes[i].vert_bone_idxs[mesh_vert_idx * VERT_BONES + 1], skel_model->meshes[i].vert_bone_weights[mesh_vert_idx * VERT_BONES + 1],
+            //         skel_model->meshes[i].vert_bone_idxs[mesh_vert_idx * VERT_BONES + 2], skel_model->meshes[i].vert_bone_weights[mesh_vert_idx * VERT_BONES + 2],
+            //         skel_model->meshes[i].vert_bone_idxs[mesh_vert_idx * VERT_BONES + 3], skel_model->meshes[i].vert_bone_weights[mesh_vert_idx * VERT_BONES + 3],
+            //         submesh_bones[0], skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[0],
+            //         submesh_bones[1], skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[1],
+            //         submesh_bones[2], skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[2],
+            //         submesh_bones[3], skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[3],
+            //         submesh_bones[4], skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[4],
+            //         submesh_bones[5], skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[5],
+            //         submesh_bones[6], skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[6],
+            //         submesh_bones[7], skel_model->meshes[i].submeshes[submesh_idx].skinning_verts[vert_idx].bone_weights[7]
+            //     );
+            // }
+            // -––-----------––-----------––-----------––-----------––---------
+
+
             // free(submesh_mesh_tri_idxs);
             free(submesh_mesh_vert_idxs);
             free(submesh_tri_verts);
@@ -1339,51 +1408,9 @@ void submesh_skeletal_model(skeletal_model_t *skel_model) {
 
 
 void write_mesh_alt_vert_structs(skeletal_mesh_t *mesh) {
-    // Drawing mode vertex types already done:
-    // - indexed software skinning 32BITF structs / weights
-    // - indexed hardware skinning 32BITF structs / weights
-    // - indexed software blending 32BITF structs
-    // - indexed hardware blending 32BITF structs
-    // - indexed static model 32BITF structs
-
-    // Drawing mode vertex types to write:
-    // DONE:
-    // - indexed software blending 16BIT structs
-    // - indexed hardware blending 16BIT structs
-    // - indexed static model 16BIT structs
-    // - indexed hardware skinning 16BIT structs / weights
-    // - indexed hardware skinning 16BIT structs, 8BIT weights
-    // - indexed software skinning 16BIT structs
-    // TODO:
-    // - unindexed software skinning 16BIT structs / weights
-    // - unindexed software skinning 16BIT structs, 8BIT weights
-    // - unindexed hardware skinning 32BITF structs / weights
-    // - unindexed hardware skinning 16BIT structs / weights
-    // - unindexed hardware skinning 16BIT structs, 8BIT weights
-    // - unindexed software blending 32BITF structs
-    // - unindexed hardware blending 32BITF structs
-    // - unindexed software blending 16BIT structs
-    // - unindexed hardware blending 16BIT structs
-    // - unindexed static model 32BITF structs
-    // - unindexed static model 16BIT structs
-
-
-    // Values to write:
-    // DONE:
-    // float verts_unit_scale; // For struct sizes that require vertices to be in [-1,1], this is the scaling value to undo that transform
-    // alt_vertex16_t *vert16s = nullptr; // Vertex struct with 16-bit data
-
-    // TODO: 
-    // alt_skinning_vertex16_t *skinning_vert16s = nullptr; // Vertex struct with 16-bit data and bone weights
-    // alt_skinning_vertex16_w8_t *skinning_vert16s_w8 = nullptr; // Vertex struct with 16-bit data, but 8-bit bone weights
-    // uint32_t unindexed_n_verts; // Number of vertices
-    // vertex_t *unindexed_verts = nullptr; // Vertex struct passed to GU for drawing
-    // skinning_vertex_t *unindexed_skinning_verts = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
-    // alt_vertex16_t *unindexed_vert16s = nullptr; // Vertex struct with 16-bit data
-    // alt_skinning_vertex16_t *unindexed_skinning_vert16s = nullptr; // Vertex struct with 16-bit data and bone weights
-    // alt_skinning_vertex16_w8_t *unindexed_skinning_vert16s_w8 = nullptr; // Vertex struct with 16-bit data, but 8-bit bone weights
-
-    const float unit_scale = 0.02f;
+    // const float unit_scale = 0.02f;
+    // const float unit_scale = 1.0f;
+    const float unit_scale = 0.01f;
     mesh->verts_unit_scale = unit_scale;
 
 
@@ -1395,7 +1422,7 @@ void write_mesh_alt_vert_structs(skeletal_mesh_t *mesh) {
     // - indexed software skinning 16BIT structs
     // ------------------------------------------------------------------------
     mesh->vert16s = (alt_vertex16_t*) malloc(sizeof(alt_vertex16_t) * mesh->n_verts);
-    for(int vert_idx = 0; vert_idx < mesh->n_verts; vert_idx++) {
+    for(uint32_t vert_idx = 0; vert_idx < mesh->n_verts; vert_idx++) {
         // Copy 16-bit vertex struct values
         // float -> int16_t, [-1,1] -> [-32768, 32767]
         // [-1.0f, 1.0f] in float32-space maps to [-32768, 32767] in int16_t-space
@@ -1413,30 +1440,87 @@ void write_mesh_alt_vert_structs(skeletal_mesh_t *mesh) {
     // ------------------------------------------------------------------------
 
     // ------------------------------------------------------------------------
+    // Write 32-bit vertex structs for the drawing modes:
+    // - indexed hardware skinning 32BIT structs, 16BIT weights
+    // - indexed hardware skinning 32BIT structs, 8BIT weights
+    // ------------------------------------------------------------------------
+    for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+        skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+        submesh->verts_unit_scale = mesh->verts_unit_scale;
+        submesh->vert16s = nullptr;
+        submesh->skinning_verts_w16 = (alt_skinning_vertex32_w16_t*) malloc(sizeof(alt_skinning_vertex32_w16_t) * submesh->n_verts);
+        for(uint32_t vert_idx = 0; vert_idx < submesh->n_verts; vert_idx++) {
+            submesh->skinning_verts_w16[vert_idx].x = submesh->skinning_verts[vert_idx].x;
+            submesh->skinning_verts_w16[vert_idx].y = submesh->skinning_verts[vert_idx].y;
+            submesh->skinning_verts_w16[vert_idx].z = submesh->skinning_verts[vert_idx].z;
+            submesh->skinning_verts_w16[vert_idx].u = submesh->skinning_verts[vert_idx].u;
+            submesh->skinning_verts_w16[vert_idx].v = submesh->skinning_verts[vert_idx].v;
+            submesh->skinning_verts_w16[vert_idx].nor_x = submesh->skinning_verts[vert_idx].nor_x;
+            submesh->skinning_verts_w16[vert_idx].nor_y = submesh->skinning_verts[vert_idx].nor_y;
+            submesh->skinning_verts_w16[vert_idx].nor_z = submesh->skinning_verts[vert_idx].nor_z;
+            for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                submesh->skinning_verts_w16[vert_idx].bone_weights[bone_idx] = float_to_int16(submesh->skinning_verts[vert_idx].bone_weights[bone_idx]);
+            }
+        }
+        submesh->skinning_verts_w8 = (alt_skinning_vertex32_w8_t*) malloc(sizeof(alt_skinning_vertex32_w8_t) * submesh->n_verts);
+        for(uint32_t vert_idx = 0; vert_idx < submesh->n_verts; vert_idx++) {
+            submesh->skinning_verts_w8[vert_idx].x = submesh->skinning_verts[vert_idx].x;
+            submesh->skinning_verts_w8[vert_idx].y = submesh->skinning_verts[vert_idx].y;
+            submesh->skinning_verts_w8[vert_idx].z = submesh->skinning_verts[vert_idx].z;
+            submesh->skinning_verts_w8[vert_idx].u = submesh->skinning_verts[vert_idx].u;
+            submesh->skinning_verts_w8[vert_idx].v = submesh->skinning_verts[vert_idx].v;
+            submesh->skinning_verts_w8[vert_idx].nor_x = submesh->skinning_verts[vert_idx].nor_x;
+            submesh->skinning_verts_w8[vert_idx].nor_y = submesh->skinning_verts[vert_idx].nor_y;
+            submesh->skinning_verts_w8[vert_idx].nor_z = submesh->skinning_verts[vert_idx].nor_z;
+            for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                submesh->skinning_verts_w8[vert_idx].bone_weights[bone_idx] = float_to_int8(submesh->skinning_verts[vert_idx].bone_weights[bone_idx]);
+            }
+        }
+    }
+    // ------------------------------------------------------------------------
+
+    // ------------------------------------------------------------------------
     // Write 16-bit vertex structs for the drawing modes:
     // - indexed hardware skinning 16BIT structs / weights
     // - indexed hardware skinning 16BIT structs, 8BIT weights
     // ------------------------------------------------------------------------
     for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
         skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+        submesh->verts_unit_scale = mesh->verts_unit_scale;
         submesh->vert16s = nullptr;
-        submesh->skinning_vert16s = (alt_skinning_vertex16_t*) malloc(sizeof(alt_skinning_vertex16_t) * submesh->n_verts);
-        for(int vert_idx = 0; vert_idx < submesh->n_verts; vert_idx++) {
-            submesh->skinning_vert16s[vert_idx].x = float_to_int16(submesh->skinning_verts[vert_idx].x * unit_scale);
-            submesh->skinning_vert16s[vert_idx].y = float_to_int16(submesh->skinning_verts[vert_idx].y * unit_scale);
-            submesh->skinning_vert16s[vert_idx].z = float_to_int16(submesh->skinning_verts[vert_idx].z * unit_scale);
-            submesh->skinning_vert16s[vert_idx].u = float_to_int16(submesh->skinning_verts[vert_idx].u);
-            submesh->skinning_vert16s[vert_idx].v = float_to_int16(submesh->skinning_verts[vert_idx].v);
-            submesh->skinning_vert16s[vert_idx].nor_x = float_to_int16(submesh->skinning_verts[vert_idx].nor_x);
-            submesh->skinning_vert16s[vert_idx].nor_y = float_to_int16(submesh->skinning_verts[vert_idx].nor_y);
-            submesh->skinning_vert16s[vert_idx].nor_z = float_to_int16(submesh->skinning_verts[vert_idx].nor_z);
+        submesh->skinning_vert16s_w32 = (alt_skinning_vertex16_w32_t*) malloc(sizeof(alt_skinning_vertex16_w32_t) * submesh->n_verts);
+        for(uint32_t vert_idx = 0; vert_idx < submesh->n_verts; vert_idx++) {
+            submesh->skinning_vert16s_w32[vert_idx].x = float_to_int16(submesh->skinning_verts[vert_idx].x * unit_scale);
+            submesh->skinning_vert16s_w32[vert_idx].y = float_to_int16(submesh->skinning_verts[vert_idx].y * unit_scale);
+            submesh->skinning_vert16s_w32[vert_idx].z = float_to_int16(submesh->skinning_verts[vert_idx].z * unit_scale);
+            submesh->skinning_vert16s_w32[vert_idx].u = float_to_int16(submesh->skinning_verts[vert_idx].u);
+            submesh->skinning_vert16s_w32[vert_idx].v = float_to_int16(submesh->skinning_verts[vert_idx].v);
+            submesh->skinning_vert16s_w32[vert_idx].nor_x = float_to_int16(submesh->skinning_verts[vert_idx].nor_x);
+            submesh->skinning_vert16s_w32[vert_idx].nor_y = float_to_int16(submesh->skinning_verts[vert_idx].nor_y);
+            submesh->skinning_vert16s_w32[vert_idx].nor_z = float_to_int16(submesh->skinning_verts[vert_idx].nor_z);
             for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
-                // FIXME - Should be int16?
-                submesh->skinning_vert16s[vert_idx].bone_weights[bone_idx] = float_to_uint16(submesh->skinning_verts[vert_idx].bone_weights[bone_idx]);
+                submesh->skinning_vert16s_w32[vert_idx].bone_weights[bone_idx] = submesh->skinning_verts[vert_idx].bone_weights[bone_idx];
+                // submesh->skinning_vert16s_w32[vert_idx].bone_weights[bone_idx] = 1.0f;
+                // submesh->skinning_vert16s_w16[vert_idx].bone_weights[bone_idx] = float_to_uint16(submesh->skinning_verts[vert_idx].bone_weights[bone_idx]);
+            }
+            // submesh->skinning_vert16s_w32[vert_idx].bone_weights[0] = 1.0f;
+        }
+        submesh->skinning_vert16s_w16 = (alt_skinning_vertex16_w16_t*) malloc(sizeof(alt_skinning_vertex16_w16_t) * submesh->n_verts);
+        for(uint32_t vert_idx = 0; vert_idx < submesh->n_verts; vert_idx++) {
+            submesh->skinning_vert16s_w16[vert_idx].x = float_to_int16(submesh->skinning_verts[vert_idx].x * unit_scale);
+            submesh->skinning_vert16s_w16[vert_idx].y = float_to_int16(submesh->skinning_verts[vert_idx].y * unit_scale);
+            submesh->skinning_vert16s_w16[vert_idx].z = float_to_int16(submesh->skinning_verts[vert_idx].z * unit_scale);
+            submesh->skinning_vert16s_w16[vert_idx].u = float_to_int16(submesh->skinning_verts[vert_idx].u);
+            submesh->skinning_vert16s_w16[vert_idx].v = float_to_int16(submesh->skinning_verts[vert_idx].v);
+            submesh->skinning_vert16s_w16[vert_idx].nor_x = float_to_int16(submesh->skinning_verts[vert_idx].nor_x);
+            submesh->skinning_vert16s_w16[vert_idx].nor_y = float_to_int16(submesh->skinning_verts[vert_idx].nor_y);
+            submesh->skinning_vert16s_w16[vert_idx].nor_z = float_to_int16(submesh->skinning_verts[vert_idx].nor_z);
+            for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                submesh->skinning_vert16s_w16[vert_idx].bone_weights[bone_idx] = float_to_int16(submesh->skinning_verts[vert_idx].bone_weights[bone_idx]);
             }
         }
         submesh->skinning_vert16s_w8 = (alt_skinning_vertex16_w8_t*) malloc(sizeof(alt_skinning_vertex16_w8_t) * submesh->n_verts);
-        for(int vert_idx = 0; vert_idx < submesh->n_verts; vert_idx++) {
+        for(uint32_t vert_idx = 0; vert_idx < submesh->n_verts; vert_idx++) {
             submesh->skinning_vert16s_w8[vert_idx].x = float_to_int16(submesh->skinning_verts[vert_idx].x * unit_scale);
             submesh->skinning_vert16s_w8[vert_idx].y = float_to_int16(submesh->skinning_verts[vert_idx].y * unit_scale);
             submesh->skinning_vert16s_w8[vert_idx].z = float_to_int16(submesh->skinning_verts[vert_idx].z * unit_scale);
@@ -1447,22 +1531,171 @@ void write_mesh_alt_vert_structs(skeletal_mesh_t *mesh) {
             submesh->skinning_vert16s_w8[vert_idx].nor_z = float_to_int16(submesh->skinning_verts[vert_idx].nor_z);
             for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
                 // FIXME - Should be int8?
-                submesh->skinning_vert16s_w8[vert_idx].bone_weights[bone_idx] = float_to_uint8(submesh->skinning_verts[vert_idx].bone_weights[bone_idx]);
+                submesh->skinning_vert16s_w8[vert_idx].bone_weights[bone_idx] = float_to_int8(submesh->skinning_verts[vert_idx].bone_weights[bone_idx]);
             }
         }
     }
+    // ------------------------------------------------------------------------
 
+    // ------------------------------------------------------------------------
+    // Write unindexed data structures:
+    //  - unindexed float32 mesh verts
+    //  - unindexed int16 mesh verts
+    // ------------------------------------------------------------------------
+    mesh->n_unindexed_verts = mesh->n_tris * 3;
+    mesh->unindexed_verts = (vertex_t*) malloc(sizeof(vertex_t) * mesh->n_unindexed_verts);
+    mesh->unindexed_vert16s = (alt_vertex16_t*) malloc(sizeof(alt_vertex16_t) * mesh->n_unindexed_verts);
+    for(uint32_t tri_idx = 0; tri_idx < mesh->n_tris; tri_idx++) {
+        for(int tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++) {
+            int unindexed_vert_idx = tri_idx * 3 + tri_vert_idx;
+            uint16_t indexed_vert_idx = mesh->tri_verts[tri_idx * 3 + tri_vert_idx];
+
+            // Write unindexed float32 vertex struct
+            mesh->unindexed_verts[unindexed_vert_idx].x = mesh->verts[indexed_vert_idx].x;
+            mesh->unindexed_verts[unindexed_vert_idx].y = mesh->verts[indexed_vert_idx].y;
+            mesh->unindexed_verts[unindexed_vert_idx].z = mesh->verts[indexed_vert_idx].z;
+            mesh->unindexed_verts[unindexed_vert_idx].u = mesh->verts[indexed_vert_idx].u;
+            mesh->unindexed_verts[unindexed_vert_idx].v = mesh->verts[indexed_vert_idx].v;
+            mesh->unindexed_verts[unindexed_vert_idx].nor_x = mesh->verts[indexed_vert_idx].nor_x;
+            mesh->unindexed_verts[unindexed_vert_idx].nor_y = mesh->verts[indexed_vert_idx].nor_y;
+            mesh->unindexed_verts[unindexed_vert_idx].nor_z = mesh->verts[indexed_vert_idx].nor_z;
+
+            // Write unindexed int16 vertex struct
+            mesh->unindexed_vert16s[unindexed_vert_idx].x = float_to_int16(mesh->verts[indexed_vert_idx].x * unit_scale);
+            mesh->unindexed_vert16s[unindexed_vert_idx].y = float_to_int16(mesh->verts[indexed_vert_idx].y * unit_scale);
+            mesh->unindexed_vert16s[unindexed_vert_idx].z = float_to_int16(mesh->verts[indexed_vert_idx].z * unit_scale);
+            mesh->unindexed_vert16s[unindexed_vert_idx].u = float_to_int16(mesh->verts[indexed_vert_idx].u);
+            mesh->unindexed_vert16s[unindexed_vert_idx].v = float_to_int16(mesh->verts[indexed_vert_idx].v);
+            mesh->unindexed_vert16s[unindexed_vert_idx].nor_x = float_to_int16(mesh->verts[indexed_vert_idx].nor_x);
+            mesh->unindexed_vert16s[unindexed_vert_idx].nor_y = float_to_int16(mesh->verts[indexed_vert_idx].nor_y);
+            mesh->unindexed_vert16s[unindexed_vert_idx].nor_z = float_to_int16(mesh->verts[indexed_vert_idx].nor_z);
+        }
+    }
     // ------------------------------------------------------------------------
 
 
-    // TODO - Call for each mesh's submesh...
-    // NOTE: submeshes have a null 'verts' pointer
-    // NOTE: submeshes only have valid 'skinning_verts' data
+
+    // ------------------------------------------------------------------------
+    // Write unindexed submesh skinning verts for:
+    // - unindexed skinning float32 verts with float32 weights
+    // - unindexed skinning float32 verts with int16 weights
+    // - unindexed skinning float32 verts with int8 weights
+    // - unindexed skinning int16 verts with float32 weights
+    // - unindexed skinning int16 verts with int16 weights
+    // - unindexed skinning int16 verts with int8 weights
+    // Write 32-bit vertex structs for the drawing modes:
+    // - indexed hardware skinning 32BIT structs, 16BIT weights
+    // - indexed hardware skinning 32BIT structs, 8BIT weights
+    // ------------------------------------------------------------------------
+    for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+        skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+        submesh->verts_unit_scale = mesh->verts_unit_scale;
+
+        submesh->verts = nullptr;
+        submesh->vert16s = nullptr;
+        submesh->n_unindexed_verts = submesh->n_tris * 3;
+
+        submesh->unindexed_skinning_vert32s_w32 = (skinning_vertex_t*) malloc(sizeof(skinning_vertex_t) * submesh->n_unindexed_verts);
+        submesh->unindexed_skinning_vert32s_w16 = (skinning_vertex_t*) malloc(sizeof(skinning_vertex_t) * submesh->n_unindexed_verts);
+        submesh->unindexed_skinning_vert32s_w8 = (skinning_vertex_t*) malloc(sizeof(skinning_vertex_t) * submesh->n_unindexed_verts);
+        submesh->unindexed_skinning_vert16s_w32 = (alt_skinning_vertex16_w16_t*) malloc(sizeof(alt_skinning_vertex16_w16_t) * submesh->n_unindexed_verts);
+        submesh->unindexed_skinning_vert16s_w16 = (alt_skinning_vertex16_w16_t*) malloc(sizeof(alt_skinning_vertex16_w16_t) * submesh->n_unindexed_verts);
+        submesh->unindexed_skinning_vert16s_w8 = (alt_skinning_vertex16_w8_t*) malloc(sizeof(alt_skinning_vertex16_w8_t) * submesh->n_unindexed_verts);
+
+        for(uint32_t tri_idx = 0; tri_idx < submesh->n_tris; tri_idx++) {
+            for(int tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++) {
+                int unindexed_vert_idx = tri_idx * 3 + tri_vert_idx;
+                uint16_t indexed_vert_idx = submesh->tri_verts[tri_idx * 3 + tri_vert_idx];
+
+                // float32 vertex with float32 weights
+                submesh->unindexed_skinning_vert32s_w32[unindexed_vert_idx].x = submesh->skinning_verts[indexed_vert_idx].x;
+                submesh->unindexed_skinning_vert32s_w32[unindexed_vert_idx].y = submesh->skinning_verts[indexed_vert_idx].y;
+                submesh->unindexed_skinning_vert32s_w32[unindexed_vert_idx].z = submesh->skinning_verts[indexed_vert_idx].z;
+                submesh->unindexed_skinning_vert32s_w32[unindexed_vert_idx].u = submesh->skinning_verts[indexed_vert_idx].u;
+                submesh->unindexed_skinning_vert32s_w32[unindexed_vert_idx].v = submesh->skinning_verts[indexed_vert_idx].v;
+                submesh->unindexed_skinning_vert32s_w32[unindexed_vert_idx].nor_x = submesh->skinning_verts[indexed_vert_idx].nor_x;
+                submesh->unindexed_skinning_vert32s_w32[unindexed_vert_idx].nor_y = submesh->skinning_verts[indexed_vert_idx].nor_y;
+                submesh->unindexed_skinning_vert32s_w32[unindexed_vert_idx].nor_z = submesh->skinning_verts[indexed_vert_idx].nor_z;
+                for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                    submesh->unindexed_skinning_vert32s_w32[unindexed_vert_idx].bone_weights[bone_idx] = submesh->skinning_verts[indexed_vert_idx].bone_weights[bone_idx];
+                }
+
+                // float32 vertex with int16 weights
+                submesh->unindexed_skinning_vert32s_w16[unindexed_vert_idx].x = submesh->skinning_verts[indexed_vert_idx].x;
+                submesh->unindexed_skinning_vert32s_w16[unindexed_vert_idx].y = submesh->skinning_verts[indexed_vert_idx].y;
+                submesh->unindexed_skinning_vert32s_w16[unindexed_vert_idx].z = submesh->skinning_verts[indexed_vert_idx].z;
+                submesh->unindexed_skinning_vert32s_w16[unindexed_vert_idx].u = submesh->skinning_verts[indexed_vert_idx].u;
+                submesh->unindexed_skinning_vert32s_w16[unindexed_vert_idx].v = submesh->skinning_verts[indexed_vert_idx].v;
+                submesh->unindexed_skinning_vert32s_w16[unindexed_vert_idx].nor_x = submesh->skinning_verts[indexed_vert_idx].nor_x;
+                submesh->unindexed_skinning_vert32s_w16[unindexed_vert_idx].nor_y = submesh->skinning_verts[indexed_vert_idx].nor_y;
+                submesh->unindexed_skinning_vert32s_w16[unindexed_vert_idx].nor_z = submesh->skinning_verts[indexed_vert_idx].nor_z;
+                for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                    submesh->unindexed_skinning_vert32s_w16[unindexed_vert_idx].bone_weights[bone_idx] = float_to_int16(submesh->skinning_verts[indexed_vert_idx].bone_weights[bone_idx]);
+                }
+
+                // float32 vertex with int8 weights
+                submesh->unindexed_skinning_vert32s_w8[unindexed_vert_idx].x = submesh->skinning_verts[indexed_vert_idx].x;
+                submesh->unindexed_skinning_vert32s_w8[unindexed_vert_idx].y = submesh->skinning_verts[indexed_vert_idx].y;
+                submesh->unindexed_skinning_vert32s_w8[unindexed_vert_idx].z = submesh->skinning_verts[indexed_vert_idx].z;
+                submesh->unindexed_skinning_vert32s_w8[unindexed_vert_idx].u = submesh->skinning_verts[indexed_vert_idx].u;
+                submesh->unindexed_skinning_vert32s_w8[unindexed_vert_idx].v = submesh->skinning_verts[indexed_vert_idx].v;
+                submesh->unindexed_skinning_vert32s_w8[unindexed_vert_idx].nor_x = submesh->skinning_verts[indexed_vert_idx].nor_x;
+                submesh->unindexed_skinning_vert32s_w8[unindexed_vert_idx].nor_y = submesh->skinning_verts[indexed_vert_idx].nor_y;
+                submesh->unindexed_skinning_vert32s_w8[unindexed_vert_idx].nor_z = submesh->skinning_verts[indexed_vert_idx].nor_z;
+                for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                    submesh->unindexed_skinning_vert32s_w8[unindexed_vert_idx].bone_weights[bone_idx] = float_to_int8(submesh->skinning_verts[indexed_vert_idx].bone_weights[bone_idx]);
+                }
+
+                // int16 vertex with float32 weights
+                submesh->unindexed_skinning_vert16s_w32[unindexed_vert_idx].x = float_to_int16(submesh->skinning_verts[indexed_vert_idx].x * unit_scale);
+                submesh->unindexed_skinning_vert16s_w32[unindexed_vert_idx].y = float_to_int16(submesh->skinning_verts[indexed_vert_idx].y * unit_scale);
+                submesh->unindexed_skinning_vert16s_w32[unindexed_vert_idx].z = float_to_int16(submesh->skinning_verts[indexed_vert_idx].z * unit_scale);
+                submesh->unindexed_skinning_vert16s_w32[unindexed_vert_idx].u = float_to_int16(submesh->skinning_verts[indexed_vert_idx].u);
+                submesh->unindexed_skinning_vert16s_w32[unindexed_vert_idx].v = float_to_int16(submesh->skinning_verts[indexed_vert_idx].v);
+                submesh->unindexed_skinning_vert16s_w32[unindexed_vert_idx].nor_x = float_to_int16(submesh->skinning_verts[indexed_vert_idx].nor_x);
+                submesh->unindexed_skinning_vert16s_w32[unindexed_vert_idx].nor_y = float_to_int16(submesh->skinning_verts[indexed_vert_idx].nor_y);
+                submesh->unindexed_skinning_vert16s_w32[unindexed_vert_idx].nor_z = float_to_int16(submesh->skinning_verts[indexed_vert_idx].nor_z);
+                for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                    submesh->unindexed_skinning_vert16s_w32[unindexed_vert_idx].bone_weights[bone_idx] = submesh->skinning_verts[indexed_vert_idx].bone_weights[bone_idx];
+                }
+
+
+                // int16 vertex with int16 weights
+                submesh->unindexed_skinning_vert16s_w16[unindexed_vert_idx].x = float_to_int16(submesh->skinning_verts[indexed_vert_idx].x * unit_scale);
+                submesh->unindexed_skinning_vert16s_w16[unindexed_vert_idx].y = float_to_int16(submesh->skinning_verts[indexed_vert_idx].y * unit_scale);
+                submesh->unindexed_skinning_vert16s_w16[unindexed_vert_idx].z = float_to_int16(submesh->skinning_verts[indexed_vert_idx].z * unit_scale);
+                submesh->unindexed_skinning_vert16s_w16[unindexed_vert_idx].u = float_to_int16(submesh->skinning_verts[indexed_vert_idx].u);
+                submesh->unindexed_skinning_vert16s_w16[unindexed_vert_idx].v = float_to_int16(submesh->skinning_verts[indexed_vert_idx].v);
+                submesh->unindexed_skinning_vert16s_w16[unindexed_vert_idx].nor_x = float_to_int16(submesh->skinning_verts[indexed_vert_idx].nor_x);
+                submesh->unindexed_skinning_vert16s_w16[unindexed_vert_idx].nor_y = float_to_int16(submesh->skinning_verts[indexed_vert_idx].nor_y);
+                submesh->unindexed_skinning_vert16s_w16[unindexed_vert_idx].nor_z = float_to_int16(submesh->skinning_verts[indexed_vert_idx].nor_z);
+                for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                    submesh->unindexed_skinning_vert16s_w16[unindexed_vert_idx].bone_weights[bone_idx] = float_to_int16(submesh->skinning_verts[indexed_vert_idx].bone_weights[bone_idx]);
+                }
+
+                // int16 vertex with int8 weights
+                submesh->unindexed_skinning_vert16s_w8[unindexed_vert_idx].x = float_to_int16(submesh->skinning_verts[indexed_vert_idx].x * unit_scale);
+                submesh->unindexed_skinning_vert16s_w8[unindexed_vert_idx].y = float_to_int16(submesh->skinning_verts[indexed_vert_idx].y * unit_scale);
+                submesh->unindexed_skinning_vert16s_w8[unindexed_vert_idx].z = float_to_int16(submesh->skinning_verts[indexed_vert_idx].z * unit_scale);
+                submesh->unindexed_skinning_vert16s_w8[unindexed_vert_idx].u = float_to_int16(submesh->skinning_verts[indexed_vert_idx].u);
+                submesh->unindexed_skinning_vert16s_w8[unindexed_vert_idx].v = float_to_int16(submesh->skinning_verts[indexed_vert_idx].v);
+                submesh->unindexed_skinning_vert16s_w8[unindexed_vert_idx].nor_x = float_to_int16(submesh->skinning_verts[indexed_vert_idx].nor_x);
+                submesh->unindexed_skinning_vert16s_w8[unindexed_vert_idx].nor_y = float_to_int16(submesh->skinning_verts[indexed_vert_idx].nor_y);
+                submesh->unindexed_skinning_vert16s_w8[unindexed_vert_idx].nor_z = float_to_int16(submesh->skinning_verts[indexed_vert_idx].nor_z);
+                for(int bone_idx = 0; bone_idx < SUBMESH_BONES; bone_idx++) {
+                    submesh->unindexed_skinning_vert16s_w8[unindexed_vert_idx].bone_weights[bone_idx] = float_to_int8(submesh->skinning_verts[indexed_vert_idx].bone_weights[bone_idx]);
+                }
+            }
+        }
+    }
+    // ------------------------------------------------------------------------
+
+
 }
 
 
 void write_model_alt_vert_structs(skeletal_model_t *skel_model) {
-    for(int i = 0; i < skel_model->n_meshes; i++) {
+    for(uint32_t i = 0; i < skel_model->n_meshes; i++) {
         skeletal_mesh_t *mesh = &(skel_model->meshes[i]);
         write_mesh_alt_vert_structs(mesh);
     }
@@ -1682,6 +1915,58 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
 
 }
 
+
+// 
+// int16 vertex struct copy of `apply_skeleton_pose`
+// Applies a `skeletal_skeleton_t` object's current built pose to the model. 
+// Populates the mesh's `verts` array with the final model-space vertex locations.
+// 
+void apply_skeleton_pose_int16(skeletal_skeleton_t *skeleton, skeletal_model_t *model) {
+
+    if(skeleton->model != model) {
+        // FIXME - Is this a valid condition?
+        return;
+    }
+
+
+    // Apply skeleton pose to all vertices for all meshes
+    for(uint32_t mesh_idx = 0; mesh_idx < model->n_meshes; mesh_idx++) {
+        for(uint32_t vert_idx = 0; vert_idx < model->meshes[mesh_idx].n_verts; vert_idx++) {
+            // NOTE - We start from the same float32 struct as the int16 structs would be treated as floats in the math anyway
+            vec3_t vert_rest_pos = model->meshes[mesh_idx].vert_rest_positions[vert_idx];
+            vec3_t vert_rest_nor = model->meshes[mesh_idx].vert_rest_normals[vert_idx];
+            // Accumulate final vertex position here to calculate weighted sum
+            vec3_t vert_pos = { 0.0f, 0.0f, 0.0f};
+            vec3_t vert_nor = { 0.0f, 0.0f, 0.0f};
+            // Accumulate weighted sum total here
+            float total_weight = 0.0f;
+
+            // Loop through the vert's 4 bone indices
+            for(int i = 0; i < 4; i++) {
+                int vert_bone_idx = model->meshes[mesh_idx].vert_bone_idxs[(4*vert_idx) + i];
+                float vert_bone_weight = model->meshes[mesh_idx].vert_bone_weights[(4*vert_idx) + i];
+                // TODO - Measure impact of this speed? It skips over half othe vert-bone mapping matrix
+                if(vert_bone_idx >= 0 && vert_bone_weight > 0.01) {
+                    // float vert_bone_weight = model->vert_bone_weights[4*i + j];
+                    vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
+                    vec3_t vert_bone_nor = mul_mat3x3_vec3(skeleton->bone_normal_transforms[vert_bone_idx], vert_rest_nor);
+                    vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+                    vert_nor = add_vec3( vert_nor, mul_float_vec3( vert_bone_weight, vert_bone_nor));
+                    total_weight += vert_bone_weight;
+                }
+            }
+
+            float pos_scale = model->meshes[mesh_idx].verts_unit_scale / total_weight;
+            float nor_scale = 1.0f / total_weight;
+            model->meshes[mesh_idx].vert16s[vert_idx].x = float_to_int16(vert_pos.x * pos_scale);
+            model->meshes[mesh_idx].vert16s[vert_idx].y = float_to_int16(vert_pos.y * pos_scale);
+            model->meshes[mesh_idx].vert16s[vert_idx].z = float_to_int16(vert_pos.z * pos_scale);
+            model->meshes[mesh_idx].vert16s[vert_idx].nor_x = float_to_int16(vert_nor.x * nor_scale);
+            model->meshes[mesh_idx].vert16s[vert_idx].nor_y = float_to_int16(vert_nor.y * nor_scale);
+            model->meshes[mesh_idx].vert16s[vert_idx].nor_z = float_to_int16(vert_nor.z * nor_scale);
+        }
+    }
+}
 
 
 
@@ -2054,7 +2339,6 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
         // TODO - Maybe I don't do that here and only in the submesh...
 
         skel_model->meshes[i].n_tris = iqm_meshes[i].n_tris;
-        // skel_model->meshes[i].n_tri_verts = skel_model->meshes[i].n_tris * 3;
         skel_model->meshes[i].tri_verts = (uint16_t*) malloc(sizeof(uint16_t) * 3 * skel_model->meshes[i].n_tris);
 
         for(uint32_t j = 0; j < skel_model->meshes[i].n_tris; j++) {

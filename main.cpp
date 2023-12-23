@@ -41,7 +41,8 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 #define SCR_WIDTH (480)
 #define SCR_HEIGHT (272)
 // static unsigned int __attribute__((aligned(16))) display_list[262144];
-static unsigned int __attribute__((aligned(16))) display_list[524288];
+// static unsigned int __attribute__((aligned(16))) display_list[524288];
+static unsigned int __attribute__((aligned(16))) display_list[1048576];
 
 
 void *draw_buffer;
@@ -136,8 +137,8 @@ double get_epoch_time() {
     clock_gettime(clk_id, &tspec);
 
     // Time since epoch
-    tspec.tv_sec;
-    tspec.tv_nsec;
+    // tspec.tv_sec;
+    // tspec.tv_nsec;
     double epoch_time = tspec.tv_sec + (tspec.tv_nsec / 1e9);
     return epoch_time;
 }
@@ -154,38 +155,73 @@ void draw_skeletal_model_indexed_swskinning_float32(skeletal_model_t *model) {
 }
 
 
-void draw_skeletal_model_indexed_hwskinning_float32(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+void draw_skeletal_model_indexed_swskinning_int16(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, mesh->n_tris * 3, mesh->tri_verts, mesh->vert16s);
+    }
+}
+
+
+void bind_submesh_bones_float32(skeletal_mesh_t *submesh, skeletal_skeleton_t *skeleton) {
+    for(int submesh_bone_idx = 0; submesh_bone_idx < submesh->n_skinning_bones; submesh_bone_idx++) {
+        // Get the index into the skeleton list of bones:
+        int bone_idx = submesh->skinning_bone_idxs[submesh_bone_idx];
+        mat3x4_t *bone_mat3x4 = &(skeleton->bone_transforms[bone_idx]);
+
+        // Translate the mat3x4_t bone transform matrix to ScePspFMatrix4
+        ScePspFMatrix4 bone_mat;
+        bone_mat.x.x = bone_mat3x4->m[0];   bone_mat.y.x = bone_mat3x4->m[3];   bone_mat.z.x = bone_mat3x4->m[6];   bone_mat.w.x = bone_mat3x4->m[9];
+        bone_mat.x.y = bone_mat3x4->m[1];   bone_mat.y.y = bone_mat3x4->m[4];   bone_mat.z.y = bone_mat3x4->m[7];   bone_mat.w.y = bone_mat3x4->m[10];
+        bone_mat.x.z = bone_mat3x4->m[2];   bone_mat.y.z = bone_mat3x4->m[5];   bone_mat.z.z = bone_mat3x4->m[8];   bone_mat.w.z = bone_mat3x4->m[11];
+        bone_mat.x.w = 0.0f;                bone_mat.y.w = 0.0f;                bone_mat.z.w = 0.0f;                bone_mat.w.w = 1.0f;
+
+        sceGuBoneMatrix(submesh_bone_idx, &bone_mat);
+    }
+}
+
+void bind_submesh_bones_int16(skeletal_mesh_t *submesh, skeletal_skeleton_t *skeleton) {
+    for(int submesh_bone_idx = 0; submesh_bone_idx < submesh->n_skinning_bones; submesh_bone_idx++) {
+        // Get the index into the skeleton list of bones:
+        int bone_idx = submesh->skinning_bone_idxs[submesh_bone_idx];
+        mat3x4_t *bone_mat3x4 = &(skeleton->bone_transforms[bone_idx]);
+        float apply_vert_scale = submesh->verts_unit_scale;
+        float undo_vert_scale = 1.0f / submesh->verts_unit_scale;
+
+        // Transform matrix that undoes int16 scaling to prepare for skinning metrix
+        ScePspFVector3 undo_scale_vec3 = {undo_vert_scale,undo_vert_scale,undo_vert_scale};
+        ScePspFMatrix4 undo_scale_mat;
+        gumLoadIdentity(&undo_scale_mat);
+        gumScale(&undo_scale_mat, &undo_scale_vec3);
+
+        // Transform matrix that re-applies int16 scaling
+        ScePspFVector3 apply_scale_vec3 = {apply_vert_scale,apply_vert_scale,apply_vert_scale};
+        ScePspFMatrix4 apply_scale_mat;
+        gumLoadIdentity(&apply_scale_mat);
+        gumScale(&apply_scale_mat, &apply_scale_vec3);
+
+        // Translate the mat3x4_t bone transform matrix to ScePspFMatrix4
+        ScePspFMatrix4 bone_mat;
+        bone_mat.x.x = bone_mat3x4->m[0];   bone_mat.y.x = bone_mat3x4->m[3];   bone_mat.z.x = bone_mat3x4->m[6];   bone_mat.w.x = bone_mat3x4->m[9];
+        bone_mat.x.y = bone_mat3x4->m[1];   bone_mat.y.y = bone_mat3x4->m[4];   bone_mat.z.y = bone_mat3x4->m[7];   bone_mat.w.y = bone_mat3x4->m[10];
+        bone_mat.x.z = bone_mat3x4->m[2];   bone_mat.y.z = bone_mat3x4->m[5];   bone_mat.z.z = bone_mat3x4->m[8];   bone_mat.w.z = bone_mat3x4->m[11];
+        bone_mat.x.w = 0.0f;                bone_mat.y.w = 0.0f;                bone_mat.z.w = 0.0f;                bone_mat.w.w = 1.0f;
+
+        // bone_mat = apply_scale * bone_mat * undo_scale
+        gumMultMatrix(&bone_mat, &bone_mat, &undo_scale_mat);
+        gumMultMatrix(&bone_mat, &apply_scale_mat, &bone_mat);
+        sceGuBoneMatrix(submesh_bone_idx, &bone_mat);
+    }
+}
+
+
+
+void draw_skeletal_model_indexed_hwskinning_float32_float32weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
     for(unsigned int i = 0; i < model->n_meshes; i++) {
         skeletal_mesh_t *mesh = &(model->meshes[i]);
         for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
             skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
-            for(int submesh_bone_idx = 0; submesh_bone_idx < submesh->n_skinning_bones; submesh_bone_idx++) {
-                // Get the index into the skeleton list of bones:
-                int bone_idx = submesh->skinning_bone_idxs[submesh_bone_idx];
-                mat3x4_t *bone_mat3x4 = &(skeleton->bone_transforms[bone_idx]);
-
-                // Translate the mat3x4_t bone transform matrix to ScePspFMatrix4
-                ScePspFMatrix4 bone_mat;
-
-                // ScePspFMatrix4 Internal layout:
-                // [ m.x.x  m.y.x  m.z.x  m.w.x ]
-                // [ m.x.y  m.y.y  m.z.y  m.w.y ]
-                // [ m.x.z  m.y.z  m.z.z  m.w.z ]
-                // [ m.x.w  m.y.w  m.z.w  m.w.w ]
-
-                // Identity Matrix
-                // bone_mat.x.x = 1.0f; bone_mat.y.x = 0.0f; bone_mat.z.x = 0.0f; bone_mat.w.x = 0.0f;
-                // bone_mat.x.y = 0.0f; bone_mat.y.y = 1.0f; bone_mat.z.y = 0.0f; bone_mat.w.y = 0.0f;
-                // bone_mat.x.z = 0.0f; bone_mat.y.z = 0.0f; bone_mat.z.z = 1.0f; bone_mat.w.z = 0.0f;
-                // bone_mat.x.w = 0.0f; bone_mat.y.w = 0.0f; bone_mat.z.w = 0.0f; bone_mat.w.w = 1.0f;
-
-                // Pose Matrix
-                bone_mat.x.x = bone_mat3x4->m[0];   bone_mat.y.x = bone_mat3x4->m[3];   bone_mat.z.x = bone_mat3x4->m[6];   bone_mat.w.x = bone_mat3x4->m[9];
-                bone_mat.x.y = bone_mat3x4->m[1];   bone_mat.y.y = bone_mat3x4->m[4];   bone_mat.z.y = bone_mat3x4->m[7];   bone_mat.w.y = bone_mat3x4->m[10];
-                bone_mat.x.z = bone_mat3x4->m[2];   bone_mat.y.z = bone_mat3x4->m[5];   bone_mat.z.z = bone_mat3x4->m[8];   bone_mat.w.z = bone_mat3x4->m[11];
-                bone_mat.x.w = 0.0f;                bone_mat.y.w = 0.0f;                bone_mat.z.w = 0.0f;                bone_mat.w.w = 1.0f;
-                sceGuBoneMatrix(submesh_bone_idx, &bone_mat);
-            }
+            bind_submesh_bones_float32(submesh, skeleton);
             
             // GU_COLOR_8888
             sceGumDrawArray(
@@ -199,22 +235,105 @@ void draw_skeletal_model_indexed_hwskinning_float32(skeletal_model_t *model, ske
 }
 
 
-void draw_skeletal_model_indexed_swskinning_int16() {
+void draw_skeletal_model_indexed_hwskinning_float32_int16weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_float32(submesh, skeleton);
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                // GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                submesh->tri_verts, 
+                // submesh->skinning_verts
+                submesh->skinning_verts_w16
+            );
+        }
+    }
+}
 
+void draw_skeletal_model_indexed_hwskinning_float32_int8weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_float32(submesh, skeleton);
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                // GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_8BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                submesh->tri_verts, 
+                // submesh->skinning_verts
+                submesh->skinning_verts_w8
+            );
+        }
+    }
 }
 
 
-void draw_skeletal_model_indexed_hwskinning_int16() {
 
+void draw_skeletal_model_indexed_hwskinning_int16_float32weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_int16(submesh, skeleton);
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                // GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                submesh->tri_verts, 
+                // submesh->skinning_verts
+                submesh->skinning_vert16s_w32
+            );
+        }
+    }
 }
 
 
-void draw_skeletal_model_indexed_swskinning_int16_int8weights() {
-
+void draw_skeletal_model_indexed_hwskinning_int16_int16weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_int16(submesh, skeleton);
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_16BIT|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                submesh->tri_verts, 
+                submesh->skinning_vert16s_w16
+            );
+        }
+    }
 }
 
 
-void draw_skeletal_model_indexed_hwskinning_int16_int8weights() {
+
+void draw_skeletal_model_indexed_hwskinning_int16_int8weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_int16(submesh, skeleton);
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_8BIT|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                submesh->tri_verts, 
+                submesh->skinning_vert16s_w8
+            );
+        }
+    }
 
 }
 
@@ -223,7 +342,7 @@ void draw_skeletal_model_indexed_swblending_float32(skeletal_model_t *model) {
     for(unsigned int i = 0; i < model->n_meshes; i++) {
         skeletal_mesh_t *mesh = &(model->meshes[i]);
         // Fake software blending
-        for(int j = 0; j < mesh->n_verts; j++) {
+        for(uint32_t j = 0; j < mesh->n_verts; j++) {
             mesh->verts[j].x = 0.5 * (mesh->verts[j].x + mesh->verts[j].x);
             mesh->verts[j].y = 0.5 * (mesh->verts[j].y + mesh->verts[j].y);
             mesh->verts[j].z = 0.5 * (mesh->verts[j].z + mesh->verts[j].z);
@@ -238,7 +357,7 @@ void draw_skeletal_model_indexed_hwblending_float32(skeletal_model_t *model) {
     for(unsigned int i = 0; i < model->n_meshes; i++) {
         skeletal_mesh_t *mesh = &(model->meshes[i]);
         vertex_t * const verts_data = static_cast<vertex_t*>(sceGuGetMemory(sizeof(vertex_t) * mesh->n_verts * 2));
-        for(int j = 0; j < mesh->n_verts; j++) {
+        for(uint32_t j = 0; j < mesh->n_verts; j++) {
             // Static fields:
             verts_data[j*2 + 0].u = mesh->verts[j].u;
             verts_data[j*2 + 0].v = mesh->verts[j].v;
@@ -270,12 +389,52 @@ void draw_skeletal_model_indexed_hwblending_float32(skeletal_model_t *model) {
 
 
 void draw_skeletal_model_indexed_swblending_int16(skeletal_model_t *model) {
-
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        // Fake software blending
+        for(uint32_t j = 0; j < mesh->n_verts; j++) {
+            mesh->vert16s[j].x = (mesh->vert16s[j].x + mesh->vert16s[j].x) / 2;
+            mesh->vert16s[j].y = (mesh->vert16s[j].y + mesh->vert16s[j].y) / 2;
+            mesh->vert16s[j].z = (mesh->vert16s[j].z + mesh->vert16s[j].z) / 2;
+        }
+        // GU_COLOR_8888
+        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, mesh->n_tris * 3, mesh->tri_verts, mesh->vert16s);
+    }
 }
 
 
-void draw_skeletal_model_indexed_hwblending_int16() {
+void draw_skeletal_model_indexed_hwblending_int16(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        alt_vertex16_t * const verts_data = static_cast<alt_vertex16_t*>(sceGuGetMemory(sizeof(alt_vertex16_t) * mesh->n_verts * 2));
+        for(uint32_t j = 0; j < mesh->n_verts; j++) {
+            // Static fields:
+            verts_data[j*2 + 0].u = mesh->vert16s[j].u;
+            verts_data[j*2 + 0].v = mesh->vert16s[j].v;
+            verts_data[j*2 + 1].u = mesh->vert16s[j].u;
+            verts_data[j*2 + 1].v = mesh->vert16s[j].v;
 
+            // Fake blending: (Pulled from the same mesh / vertices)
+            verts_data[j*2 + 0].x       = mesh->vert16s[j].x;
+            verts_data[j*2 + 0].y       = mesh->vert16s[j].y;
+            verts_data[j*2 + 0].z       = mesh->vert16s[j].z;
+            verts_data[j*2 + 0].nor_x   = mesh->vert16s[j].nor_x;
+            verts_data[j*2 + 0].nor_y   = mesh->vert16s[j].nor_y;
+            verts_data[j*2 + 0].nor_z   = mesh->vert16s[j].nor_z;
+            verts_data[j*2 + 1].x       = mesh->vert16s[j].x;
+            verts_data[j*2 + 1].y       = mesh->vert16s[j].y;
+            verts_data[j*2 + 1].z       = mesh->vert16s[j].z;
+            verts_data[j*2 + 1].nor_x   = mesh->vert16s[j].nor_x;
+            verts_data[j*2 + 1].nor_y   = mesh->vert16s[j].nor_y;
+            verts_data[j*2 + 1].nor_z   = mesh->vert16s[j].nor_z;
+        }
+
+        // GU_COLOR_8888
+        float blend = 0.5f;
+        sceGuMorphWeight(0, 1 - blend);
+        sceGuMorphWeight(1, blend);
+        sceGumDrawArray(GU_TRIANGLES,GU_INDEX_16BIT|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D|GU_VERTICES(2), mesh->n_tris * 3, mesh->tri_verts, verts_data);
+    }
 }
 
 
@@ -295,12 +454,22 @@ void draw_skeletal_model_indexed_static_int16(skeletal_model_t *model) {
 }
 
 
-void draw_skeletal_model_unindexed_swskinning_float32() {
+void draw_skeletal_model_unindexed_hwskinning_float32_float32weights() {
 
 }
 
 
-void draw_skeletal_model_unindexed_hwskinning_float32() {
+void draw_skeletal_model_unindexed_hwskinning_float32_int16weights() {
+
+}
+
+
+void draw_skeletal_model_unindexed_hwskinning_float32_int8weights() {
+
+}
+
+
+void draw_skeletal_model_unindexed_swskinning_float32() {
 
 }
 
@@ -310,12 +479,12 @@ void draw_skeletal_model_unindexed_swskinning_int16() {
 }
 
 
-void draw_skeletal_model_unindexed_hwskinning_int16() {
+void draw_skeletal_model_unindexed_hwskinning_int16_float32weights() {
 
 }
 
 
-void draw_skeletal_model_unindexed_swskinning_int16_int8weights() {
+void draw_skeletal_model_unindexed_hwskinning_int16_int16weights() {
 
 }
 
@@ -325,33 +494,118 @@ void draw_skeletal_model_unindexed_hwskinning_int16_int8weights() {
 }
 
 
-void draw_skeletal_model_unindexed_swblending_float32() {
+void draw_skeletal_model_unindexed_swblending_float32(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        // Fake software blending
+        for(uint32_t j = 0; j < mesh->n_unindexed_verts; j++) {
+            mesh->unindexed_verts[j].x = 0.5 * (mesh->unindexed_verts[j].x + mesh->unindexed_verts[j].x);
+            mesh->unindexed_verts[j].y = 0.5 * (mesh->unindexed_verts[j].y + mesh->unindexed_verts[j].y);
+            mesh->unindexed_verts[j].z = 0.5 * (mesh->unindexed_verts[j].z + mesh->unindexed_verts[j].z);
+        }
+        // GU_COLOR_8888
+        sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh->n_tris * 3, nullptr, mesh->unindexed_verts);
+    }
+}
 
+void draw_skeletal_model_unindexed_hwblending_float32(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        vertex_t * const verts_data = static_cast<vertex_t*>(sceGuGetMemory(sizeof(vertex_t) * mesh->n_unindexed_verts * 2));
+        for(uint32_t j = 0; j < mesh->n_unindexed_verts; j++) {
+            // Static fields:
+            verts_data[j*2 + 0].u = mesh->unindexed_verts[j].u;
+            verts_data[j*2 + 0].v = mesh->unindexed_verts[j].v;
+            verts_data[j*2 + 1].u = mesh->unindexed_verts[j].u;
+            verts_data[j*2 + 1].v = mesh->unindexed_verts[j].v;
+
+            // Fake blending: (Pulled from the same mesh / vertices)
+            verts_data[j*2 + 0].x       = mesh->unindexed_verts[j].x;
+            verts_data[j*2 + 0].y       = mesh->unindexed_verts[j].y;
+            verts_data[j*2 + 0].z       = mesh->unindexed_verts[j].z;
+            verts_data[j*2 + 0].nor_x   = mesh->unindexed_verts[j].nor_x;
+            verts_data[j*2 + 0].nor_y   = mesh->unindexed_verts[j].nor_y;
+            verts_data[j*2 + 0].nor_z   = mesh->unindexed_verts[j].nor_z;
+            verts_data[j*2 + 1].x       = mesh->unindexed_verts[j].x;
+            verts_data[j*2 + 1].y       = mesh->unindexed_verts[j].y;
+            verts_data[j*2 + 1].z       = mesh->unindexed_verts[j].z;
+            verts_data[j*2 + 1].nor_x   = mesh->unindexed_verts[j].nor_x;
+            verts_data[j*2 + 1].nor_y   = mesh->unindexed_verts[j].nor_y;
+            verts_data[j*2 + 1].nor_z   = mesh->unindexed_verts[j].nor_z;
+        }
+
+        // GU_COLOR_8888
+        float blend = 0.5f;
+        sceGuMorphWeight(0, 1 - blend);
+        sceGuMorphWeight(1, blend);
+        sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D|GU_VERTICES(2), mesh->n_tris * 3, nullptr, verts_data);
+    }
 }
 
 
-void draw_skeletal_model_unindexed_hwblending_float32() {
-
+void draw_skeletal_model_unindexed_swblending_int16(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        // Fake software blending
+        for(uint32_t j = 0; j < mesh->n_unindexed_verts; j++) {
+            mesh->unindexed_vert16s[j].x = (mesh->unindexed_vert16s[j].x + mesh->unindexed_vert16s[j].x) / 2;
+            mesh->unindexed_vert16s[j].y = (mesh->unindexed_vert16s[j].y + mesh->unindexed_vert16s[j].y) / 2;
+            mesh->unindexed_vert16s[j].z = (mesh->unindexed_vert16s[j].z + mesh->unindexed_vert16s[j].z) / 2;
+        }
+        // GU_COLOR_8888
+        sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, mesh->n_tris * 3, nullptr, mesh->unindexed_vert16s);
+    }
 }
 
 
-void draw_skeletal_model_unindexed_swblending_int16() {
+void draw_skeletal_model_unindexed_hwblending_int16(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        alt_vertex16_t * const verts_data = static_cast<alt_vertex16_t*>(sceGuGetMemory(sizeof(alt_vertex16_t) * mesh->n_unindexed_verts * 2));
+        for(uint32_t j = 0; j < mesh->n_unindexed_verts; j++) {
+            // Static fields:
+            verts_data[j*2 + 0].u = mesh->unindexed_vert16s[j].u;
+            verts_data[j*2 + 0].v = mesh->unindexed_vert16s[j].v;
+            verts_data[j*2 + 1].u = mesh->unindexed_vert16s[j].u;
+            verts_data[j*2 + 1].v = mesh->unindexed_vert16s[j].v;
 
+            // Fake blending: (Pulled from the same mesh / vertices)
+            verts_data[j*2 + 0].x       = mesh->unindexed_vert16s[j].x;
+            verts_data[j*2 + 0].y       = mesh->unindexed_vert16s[j].y;
+            verts_data[j*2 + 0].z       = mesh->unindexed_vert16s[j].z;
+            verts_data[j*2 + 0].nor_x   = mesh->unindexed_vert16s[j].nor_x;
+            verts_data[j*2 + 0].nor_y   = mesh->unindexed_vert16s[j].nor_y;
+            verts_data[j*2 + 0].nor_z   = mesh->unindexed_vert16s[j].nor_z;
+            verts_data[j*2 + 1].x       = mesh->unindexed_vert16s[j].x;
+            verts_data[j*2 + 1].y       = mesh->unindexed_vert16s[j].y;
+            verts_data[j*2 + 1].z       = mesh->unindexed_vert16s[j].z;
+            verts_data[j*2 + 1].nor_x   = mesh->unindexed_vert16s[j].nor_x;
+            verts_data[j*2 + 1].nor_y   = mesh->unindexed_vert16s[j].nor_y;
+            verts_data[j*2 + 1].nor_z   = mesh->unindexed_vert16s[j].nor_z;
+        }
+
+        // GU_COLOR_8888
+        float blend = 0.5f;
+        sceGuMorphWeight(0, 1 - blend);
+        sceGuMorphWeight(1, blend);
+        sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D|GU_VERTICES(2), mesh->n_tris * 3, nullptr, verts_data);
+    }
 }
 
 
-void draw_skeletal_model_unindexed_hwblending_int16() {
-
+void draw_skeletal_model_unindexed_static_float32(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh->n_tris * 3, nullptr, mesh->unindexed_verts);
+    }
 }
 
 
-void draw_skeletal_model_unindexed_static_float32() {
-
-}
-
-
-void draw_skeletal_model_unindexed_static_int16() {
-
+void draw_skeletal_model_unindexed_static_int16(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, mesh->n_tris * 3, nullptr, mesh->unindexed_vert16s);
+    }
 }
 // ----------------------------------------------------------------------------
 
@@ -449,28 +703,33 @@ int main(int argc, char *argv[]) {
     }
 
 
-    const int DRAW_MODE_SOFTWARE_SKINNING = 0;
-    const int DRAW_MODE_HARDWARE_SKINNING = 1;
-    const int DRAW_MODE_STATIC = 2;
-    const int DRAW_MODE_STATIC_16B = 3;
-    const int DRAW_MODE_STATIC_SOFTWARE_BLEND = 4;
-    const int DRAW_MODE_STATIC_HARDWARE_BLEND = 5;
-    // const int DRAW_MODE_STATIC_16B_SOFTWARE_BLEND = 6;
-    // const int DRAW_MODE_STATIC_16B_HARDWARE_BLEND = 7;
-    const int N_DRAW_MODES = 6;
-    int draw_mode = DRAW_MODE_SOFTWARE_SKINNING;
-    // int draw_mode = DRAW_MODE_HARDWARE_SKINNING;
-    // int draw_mode = DRAW_MODE_STATIC;
-    // int draw_mode = DRAW_MODE_STATIC_SOFTWARE_BLEND;
-    // int draw_mode = DRAW_MODE_STATIC_HARDWARE_BLEND;
+    const int DRAW_MODE_ANIMATION_SWBLENDING = 0;
+    const int DRAW_MODE_ANIMATION_HWBLENDING = 1;
+    const int DRAW_MODE_ANIMATION_SWSKINNING = 2;
+    const int DRAW_MODE_ANIMATION_HWSKINNING = 3;
+    const int DRAW_MODE_ANIMATION_STATIC = 4;
+    const int N_DRAW_MODES_ANIMATION = 5;
 
-    // TODO - Replace with these options:
-    // Options:
-    //      animation: sw blending, hw blending, hw skinning, sw skinning, static
-    //      vertex struct size: float32, int16
-    //      skinning weight struct size: int16, int8
-    //      indexing: yes, no
+    const int DRAW_MODE_VERTEX_SIZE_FLOAT32 = 0;
+    const int DRAW_MODE_VERTEX_SIZE_INT16 = 1;
+    const int N_DRAW_MODES_VERTEX_SIZE = 2;
 
+    const int DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32 = 0;
+    const int DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16 = 1;
+    const int DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8 = 2;
+    const int N_DRAW_MODES_HWSKINNING_WEIGHT_SIZE = 3;
+
+    const int DRAW_MODE_INDEXED_NO = 0;
+    const int DRAW_MODE_INDEXED_YES = 1;
+    const int N_DRAW_MODES_INDEXED = 2;
+
+    // Initial draw mode:
+    int draw_mode_animation = DRAW_MODE_ANIMATION_SWBLENDING;
+    int draw_mode_vertex_size = DRAW_MODE_VERTEX_SIZE_FLOAT32;
+    int draw_mode_hwskinning_weight_size = DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32;
+    int draw_mode_indexed = DRAW_MODE_INDEXED_NO;
+
+    // -------------------------------
 
 
 
@@ -550,9 +809,9 @@ int main(int argc, char *argv[]) {
             sceGumScale(&model_scale);
             sceGumRotateXYZ(&model_rot);
 
-            if(draw_mode == DRAW_MODE_STATIC_16B) {
+            if(draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16) {
                 // Undo the float32 -> int16 scaling
-                // Only do it once for all meshes
+                // Only do it once for all meshes that use int16 vertices
                 float undo_scale = 1.0f / iqm_model->meshes[0].verts_unit_scale;
                 ScePspFVector3 undo_scale_vec3 = {undo_scale,undo_scale,undo_scale};
                 sceGumScale(&undo_scale_vec3);
@@ -612,78 +871,116 @@ int main(int argc, char *argv[]) {
             // Set the skeleton's current pose matrices from animation data
 
 
-            // build_skeleton( iqm_skeleton, iqm_model, framegroup_idx, frametime);
-            if(draw_mode == DRAW_MODE_HARDWARE_SKINNING || draw_mode == DRAW_MODE_SOFTWARE_SKINNING) {
-                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-            }
             // Process FTE animation events elapsed between the last and current frame
             // process_anim_events( iqm_model, framegroup_idx, prev_frametime, cur_frametime, event_callback);
-            if(draw_mode == DRAW_MODE_SOFTWARE_SKINNING) {
-                apply_skeleton_pose( iqm_skeleton, iqm_model);
-            }
-            // Transform the model vertices to model-space using the skeleton's current pose matrices
             // --------------------------------------------------------------------
 
 
 
-
-
-            // for(unsigned int i = 0; i < iqm_model->n_submeshes; i++) {
-            unsigned int mesh_idx = ((unsigned int)((frame / 10.0f)) % iqm_model->n_meshes);
-
-
-            // Let's list all of the draw mode functions we need...
-            // void draw_skeletal_model_indexed_swskinning_float32();
-            // void draw_skeletal_model_indexed_hwskinning_float32();
-            // void draw_skeletal_model_indexed_swskinning_int16();
-            // void draw_skeletal_model_indexed_hwskinning_int16();
-            // void draw_skeletal_model_indexed_swskinning_int16_int8weights();
-            // void draw_skeletal_model_indexed_hwskinning_int16_int8weights();
-            // void draw_skeletal_model_indexed_swblending_float32();
-            // void draw_skeletal_model_indexed_hwblending_float32();
-            // void draw_skeletal_model_indexed_swblending_int16();
-            // void draw_skeletal_model_indexed_hwblending_int16();
-            // void draw_skeletal_model_indexed_static_float32();
-            // void draw_skeletal_model_indexed_static_int16();
-            // void draw_skeletal_model_unindexed_swskinning_float32();
-            // void draw_skeletal_model_unindexed_hwskinning_float32();
-            // void draw_skeletal_model_unindexed_swskinning_int16();
-            // void draw_skeletal_model_unindexed_hwskinning_int16();
-            // void draw_skeletal_model_unindexed_swskinning_int16_int8weights();
-            // void draw_skeletal_model_unindexed_hwskinning_int16_int8weights();
-            // void draw_skeletal_model_unindexed_swblending_float32();
-            // void draw_skeletal_model_unindexed_hwblending_float32();
-            // void draw_skeletal_model_unindexed_swblending_int16();
-            // void draw_skeletal_model_unindexed_hwblending_int16();
-            // void draw_skeletal_model_unindexed_static_float32();
-            // void draw_skeletal_model_unindexed_static_int16();
-
-            
-            // Options:
-            //      animation: sw blending, hw blending, hw skinning, sw skinning, static
-            //      vertex struct size: float32, int16
-            //      skinning weight struct size: int16, int8
-            //      indexing: yes, no
-
-            if(draw_mode == DRAW_MODE_SOFTWARE_SKINNING) {
-                draw_skeletal_model_indexed_swskinning_float32(iqm_model);
+            if(draw_mode_animation == DRAW_MODE_ANIMATION_SWBLENDING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
+                draw_skeletal_model_unindexed_swblending_float32(iqm_model);
             }
-            else if(draw_mode == DRAW_MODE_HARDWARE_SKINNING) {
-                draw_skeletal_model_indexed_hwskinning_float32(iqm_model, iqm_skeleton);
-            }
-            else if(draw_mode == DRAW_MODE_STATIC_SOFTWARE_BLEND) {
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWBLENDING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
                 draw_skeletal_model_indexed_swblending_float32(iqm_model);
             }
-            else if(draw_mode == DRAW_MODE_STATIC_HARDWARE_BLEND) {
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWBLENDING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
+                draw_skeletal_model_unindexed_swblending_int16(iqm_model);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWBLENDING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
+                draw_skeletal_model_indexed_swblending_int16(iqm_model);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWBLENDING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
+                draw_skeletal_model_unindexed_hwblending_float32(iqm_model);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWBLENDING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
                 draw_skeletal_model_indexed_hwblending_float32(iqm_model);
             }
-            else if(draw_mode == DRAW_MODE_STATIC) {
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWBLENDING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
+                draw_skeletal_model_unindexed_hwblending_int16(iqm_model);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWBLENDING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
+                draw_skeletal_model_indexed_hwblending_int16(iqm_model);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
+                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                // apply_skeleton_pose( iqm_skeleton, iqm_model);
+                // draw_skeletal_model_unindexed_swskinning_float32();
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                apply_skeleton_pose( iqm_skeleton, iqm_model);
+                draw_skeletal_model_indexed_swskinning_float32(iqm_model);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
+                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                // apply_skeleton_pose_int16( iqm_skeleton, iqm_model); // TODO - Need unindexed 16-bit version of this function
+                // draw_skeletal_model_unindexed_swskinning_int16();
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                apply_skeleton_pose_int16( iqm_skeleton, iqm_model);
+                draw_skeletal_model_indexed_swskinning_int16(iqm_model);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_STATIC      &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
+                draw_skeletal_model_unindexed_static_float32(iqm_model);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_STATIC      &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
                 draw_skeletal_model_indexed_static_float32(iqm_model);
             }
-            else if(draw_mode == DRAW_MODE_STATIC_16B) {
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_STATIC      &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
+                draw_skeletal_model_unindexed_static_int16(iqm_model);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_STATIC      &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
                 draw_skeletal_model_indexed_static_int16(iqm_model);
             }
-
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32)   {
+                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                // draw_skeletal_model_unindexed_hwskinning_float32_float32weights();
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32)  {
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_indexed_hwskinning_float32_float32weights(iqm_model, iqm_skeleton);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16)   {
+                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                // draw_skeletal_model_unindexed_hwskinning_float32_int16weights();
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16)  {
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_indexed_hwskinning_float32_int16weights(iqm_model, iqm_skeleton);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8)   {
+                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                // draw_skeletal_model_unindexed_hwskinning_float32_int8weights();
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8)  {
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_indexed_hwskinning_float32_int8weights(iqm_model, iqm_skeleton);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32)   {
+                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                // draw_skeletal_model_unindexed_hwskinning_int16_float32weights();
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32)  {
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_indexed_hwskinning_int16_float32weights(iqm_model, iqm_skeleton);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16)   {
+                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                // draw_skeletal_model_unindexed_hwskinning_int16_int16weights();
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16)  {
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_indexed_hwskinning_int16_int16weights(iqm_model, iqm_skeleton);
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8)   {
+                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                // draw_skeletal_model_unindexed_hwskinning_int16_int8weights();
+            }
+            else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8)  {
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_indexed_hwskinning_int16_int8weights(iqm_model, iqm_skeleton);
+            }
             // --------------------------------------------------------------------
         }
 
@@ -697,34 +994,110 @@ int main(int argc, char *argv[]) {
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
         // pspDebugScreenSetOffset((int) display_buffer);
 
-        pspDebugScreenSetXY(1,3);
-        switch(draw_mode) {
-            case DRAW_MODE_SOFTWARE_SKINNING:
-                pspDebugScreenPrintf("Draw mode: Software Skinning (%d)", draw_mode);
+
+        // --------------------------
+        const char *draw_mode_animation_button = "X";
+        const char *draw_mode_vertex_size_button = "[]";
+        const char *draw_mode_hwskinning_weight_size_button = "/\\";
+        const char *draw_mode_indexed_button = "()";
+
+
+        pspDebugScreenSetXY(1,4);
+        switch(draw_mode_animation) {
+            case DRAW_MODE_ANIMATION_SWBLENDING:
+                pspDebugScreenPrintf("%s Animation mode: Software blending (%d)", draw_mode_animation_button, draw_mode_animation);
                 break;
-            case DRAW_MODE_HARDWARE_SKINNING:
-                pspDebugScreenPrintf("Draw mode: Hardware Skinning (%d)", draw_mode);
+            case DRAW_MODE_ANIMATION_HWBLENDING:
+                pspDebugScreenPrintf("%s Animation mode: Hardware blending (%d)", draw_mode_animation_button, draw_mode_animation);
                 break;
-            case DRAW_MODE_STATIC:
-                pspDebugScreenPrintf("Draw mode: Static (%d)", draw_mode);
+            case DRAW_MODE_ANIMATION_SWSKINNING:
+                pspDebugScreenPrintf("%s Animation mode: Software skinning (%d)", draw_mode_animation_button, draw_mode_animation);
                 break;
-            case DRAW_MODE_STATIC_16B:
-                pspDebugScreenPrintf("Draw mode: Static 16-bit (%d)", draw_mode);
+            case DRAW_MODE_ANIMATION_HWSKINNING:
+                pspDebugScreenPrintf("%s Animation mode: Hardware skinning (%d)", draw_mode_animation_button, draw_mode_animation);
                 break;
-            case DRAW_MODE_STATIC_SOFTWARE_BLEND:
-                pspDebugScreenPrintf("Draw mode: Software Blending (%d)", draw_mode);
-                break;
-            case DRAW_MODE_STATIC_HARDWARE_BLEND:
-                pspDebugScreenPrintf("Draw mode: Hardware Blending (%d)", draw_mode);
+            case DRAW_MODE_ANIMATION_STATIC:
+                pspDebugScreenPrintf("%s Animation mode: Static (%d)", draw_mode_animation_button, draw_mode_animation);
                 break;
             default:
-                pspDebugScreenPrintf("Draw mode: Unknown (%d)", draw_mode);
+                pspDebugScreenPrintf("%s Animation mode: ??? (%d)", draw_mode_animation_button, draw_mode_animation);
                 break;
         }
 
 
-
         pspDebugScreenSetXY(1,5);
+        switch(draw_mode_vertex_size) {
+            case DRAW_MODE_VERTEX_SIZE_FLOAT32:
+                pspDebugScreenPrintf("%s Vertex Struct Size: float32 (%d)", draw_mode_vertex_size_button, draw_mode_vertex_size);
+                break;
+            case DRAW_MODE_VERTEX_SIZE_INT16:
+                pspDebugScreenPrintf("%s Vertex Struct Size: int16 (%d)", draw_mode_vertex_size_button, draw_mode_vertex_size);
+                break;
+            default:
+                pspDebugScreenPrintf("%s Vertex Struct Size: ??? (%d)", draw_mode_vertex_size_button, draw_mode_vertex_size);
+                break;
+        }
+
+        pspDebugScreenSetXY(1,6);
+        switch(draw_mode_indexed) {
+            case DRAW_MODE_INDEXED_NO:
+                pspDebugScreenPrintf("%s Draw mode indexed? No (%d)", draw_mode_indexed_button, draw_mode_indexed);
+                break;
+            case DRAW_MODE_INDEXED_YES:
+                pspDebugScreenPrintf("%s Draw mode indexed? Yes (%d)", draw_mode_indexed_button, draw_mode_indexed);
+                break;
+            default:
+                pspDebugScreenPrintf("%s Draw mode indexed? ??? (%d)", draw_mode_indexed_button, draw_mode_indexed);
+                break;
+        }
+
+        if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING) {
+            pspDebugScreenSetXY(1,7);
+            switch(draw_mode_hwskinning_weight_size) {
+                case DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32:
+                    pspDebugScreenPrintf("%s Hardware Skinning Weight struct: float32 (%d)", draw_mode_hwskinning_weight_size_button, draw_mode_hwskinning_weight_size);
+                    break;
+                case DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16:
+                    pspDebugScreenPrintf("%s Hardware Skinning Weight struct: int16 (%d)", draw_mode_hwskinning_weight_size_button, draw_mode_hwskinning_weight_size);
+                    break;
+                case DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8:
+                    pspDebugScreenPrintf("%s Hardware Skinning Weight struct: int8 (%d)", draw_mode_hwskinning_weight_size_button, draw_mode_hwskinning_weight_size);
+                    break;
+                default:
+                    pspDebugScreenPrintf("%s Hardware Skinning Weight struct: ??? (%d)", draw_mode_hwskinning_weight_size_button, draw_mode_hwskinning_weight_size);
+                    break;
+            }
+        }
+
+
+        // // pspDebugScreenSetXY(1,3);
+        // switch(draw_mode) {
+        //     case DRAW_MODE_SOFTWARE_SKINNING:
+        //         pspDebugScreenPrintf("Draw mode: Software Skinning (%d)", draw_mode);
+        //         break;
+        //     case DRAW_MODE_HARDWARE_SKINNING:
+        //         pspDebugScreenPrintf("Draw mode: Hardware Skinning (%d)", draw_mode);
+        //         break;
+        //     case DRAW_MODE_STATIC:
+        //         pspDebugScreenPrintf("Draw mode: Static (%d)", draw_mode);
+        //         break;
+        //     case DRAW_MODE_STATIC_16B:
+        //         pspDebugScreenPrintf("Draw mode: Static 16-bit (%d)", draw_mode);
+        //         break;
+        //     case DRAW_MODE_STATIC_SOFTWARE_BLEND:
+        //         pspDebugScreenPrintf("Draw mode: Software Blending (%d)", draw_mode);
+        //         break;
+        //     case DRAW_MODE_STATIC_HARDWARE_BLEND:
+        //         pspDebugScreenPrintf("Draw mode: Hardware Blending (%d)", draw_mode);
+        //         break;
+        //     default:
+        //         pspDebugScreenPrintf("Draw mode: Unknown (%d)", draw_mode);
+        //         break;
+        // }
+
+
+
+        pspDebugScreenSetXY(1,2);
         // pspDebugScreenPrintf("hello");
         double cur_epoch_time = get_epoch_time();
 
@@ -785,14 +1158,27 @@ int main(int argc, char *argv[]) {
         // ---------------------------------------------------
         sceCtrlReadBufferPositive(&cur_input, 1);
         if(prev_input_buttons != cur_input.Buttons) {
-            if(cur_input.Buttons & PSP_CTRL_LTRIGGER && !(prev_input_buttons & PSP_CTRL_LTRIGGER)) {
-                // Go back a draw mode
-                draw_mode = ((draw_mode - 1) + N_DRAW_MODES) % N_DRAW_MODES;
+            if(cur_input.Buttons & PSP_CTRL_CROSS && !(prev_input_buttons & PSP_CTRL_CROSS)) {
+                draw_mode_animation = (draw_mode_animation + 1) % N_DRAW_MODES_ANIMATION;
             }
-            if(cur_input.Buttons & PSP_CTRL_RTRIGGER && !(prev_input_buttons & PSP_CTRL_RTRIGGER)) {
-                // Advance to next draw mode
-                draw_mode = (draw_mode + 1) % N_DRAW_MODES;
+            if(cur_input.Buttons & PSP_CTRL_SQUARE && !(prev_input_buttons & PSP_CTRL_SQUARE)) {
+                draw_mode_vertex_size = (draw_mode_vertex_size + 1) % N_DRAW_MODES_VERTEX_SIZE;
             }
+            if(cur_input.Buttons & PSP_CTRL_TRIANGLE && !(prev_input_buttons & PSP_CTRL_TRIANGLE)) {
+                draw_mode_hwskinning_weight_size = (draw_mode_hwskinning_weight_size + 1) % N_DRAW_MODES_HWSKINNING_WEIGHT_SIZE;
+            }
+            if(cur_input.Buttons & PSP_CTRL_CIRCLE && !(prev_input_buttons & PSP_CTRL_CIRCLE)) {
+                draw_mode_indexed = (draw_mode_indexed + 1) % N_DRAW_MODES_INDEXED;
+            }
+
+            // if(cur_input.Buttons & PSP_CTRL_LTRIGGER && !(prev_input_buttons & PSP_CTRL_LTRIGGER)) {
+            //     // Go back a draw mode
+            //     draw_mode = ((draw_mode - 1) + N_DRAW_MODES) % N_DRAW_MODES;
+            // }
+            // if(cur_input.Buttons & PSP_CTRL_RTRIGGER && !(prev_input_buttons & PSP_CTRL_RTRIGGER)) {
+            //     // Advance to next draw mode
+            //     draw_mode = (draw_mode + 1) % N_DRAW_MODES;
+            // }
         }
         prev_input_buttons = cur_input.Buttons;
         // ---------------------------------------------------
