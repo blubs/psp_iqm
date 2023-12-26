@@ -334,7 +334,6 @@ void draw_skeletal_model_indexed_hwskinning_int16_int8weights(skeletal_model_t *
             );
         }
     }
-
 }
 
 
@@ -454,43 +453,134 @@ void draw_skeletal_model_indexed_static_int16(skeletal_model_t *model) {
 }
 
 
-void draw_skeletal_model_unindexed_hwskinning_float32_float32weights() {
+void draw_skeletal_model_unindexed_hwskinning_float32_float32weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_float32(submesh, skeleton);
 
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                GU_TRIANGLES,GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                nullptr, 
+                submesh->unindexed_skinning_vert32s_w32
+            );
+        }
+    }
 }
 
 
-void draw_skeletal_model_unindexed_hwskinning_float32_int16weights() {
-
+void draw_skeletal_model_unindexed_hwskinning_float32_int16weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_float32(submesh, skeleton);
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                // GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                GU_TRIANGLES,GU_WEIGHTS(8)|GU_WEIGHT_16BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                nullptr, 
+                submesh->unindexed_skinning_vert32s_w16
+            );
+        }
+    }
 }
 
 
-void draw_skeletal_model_unindexed_hwskinning_float32_int8weights() {
-
+void draw_skeletal_model_unindexed_hwskinning_float32_int8weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_float32(submesh, skeleton);
+            sceGumDrawArray(
+                GU_TRIANGLES,GU_WEIGHTS(8)|GU_WEIGHT_8BIT|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                nullptr, 
+                submesh->unindexed_skinning_vert32s_w8
+            );
+        }
+    }
 }
 
 
-void draw_skeletal_model_unindexed_swskinning_float32() {
-
+void draw_skeletal_model_unindexed_swskinning_float32(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, mesh->n_tris * 3, nullptr, mesh->unindexed_verts);
+    }
 }
 
 
-void draw_skeletal_model_unindexed_swskinning_int16() {
-
+void draw_skeletal_model_unindexed_swskinning_int16(skeletal_model_t *model) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        sceGumDrawArray(GU_TRIANGLES,GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, mesh->n_tris * 3, nullptr, mesh->unindexed_vert16s);
+    }
 }
 
 
-void draw_skeletal_model_unindexed_hwskinning_int16_float32weights() {
-
+void draw_skeletal_model_unindexed_hwskinning_int16_float32weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_int16(submesh, skeleton);
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                // GU_TRIANGLES,GU_INDEX_16BIT|GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_32BITF|GU_NORMAL_32BITF|GU_VERTEX_32BITF|GU_TRANSFORM_3D, 
+                GU_TRIANGLES,GU_WEIGHTS(8)|GU_WEIGHT_32BITF|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                nullptr, 
+                submesh->unindexed_skinning_vert16s_w32
+            );
+        }
+    }
 }
 
 
-void draw_skeletal_model_unindexed_hwskinning_int16_int16weights() {
-
+void draw_skeletal_model_unindexed_hwskinning_int16_int16weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_int16(submesh, skeleton);
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                GU_TRIANGLES,GU_WEIGHTS(8)|GU_WEIGHT_16BIT|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                nullptr, 
+                submesh->unindexed_skinning_vert16s_w16
+            );
+        }
+    }
 }
 
 
-void draw_skeletal_model_unindexed_hwskinning_int16_int8weights() {
 
+void draw_skeletal_model_unindexed_hwskinning_int16_int8weights(skeletal_model_t *model, skeletal_skeleton_t *skeleton) {
+    for(unsigned int i = 0; i < model->n_meshes; i++) {
+        skeletal_mesh_t *mesh = &(model->meshes[i]);
+        for(int submesh_idx = 0; submesh_idx < mesh->n_submeshes; submesh_idx++) {
+            skeletal_mesh_t *submesh = &(mesh->submeshes[submesh_idx]);
+            bind_submesh_bones_int16(submesh, skeleton);
+            
+            // GU_COLOR_8888
+            sceGumDrawArray(
+                GU_TRIANGLES,GU_WEIGHTS(8)|GU_WEIGHT_8BIT|GU_TEXTURE_16BIT|GU_NORMAL_16BIT|GU_VERTEX_16BIT|GU_TRANSFORM_3D, 
+                submesh->n_tris * 3, 
+                nullptr, 
+                submesh->unindexed_skinning_vert16s_w8
+            );
+        }
+    }
 }
 
 
@@ -902,9 +992,9 @@ int main(int argc, char *argv[]) {
                 draw_skeletal_model_indexed_hwblending_int16(iqm_model);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
-                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-                // apply_skeleton_pose( iqm_skeleton, iqm_model);
-                // draw_skeletal_model_unindexed_swskinning_float32();
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                apply_skeleton_pose_unindexed_float32( iqm_skeleton, iqm_model);
+                draw_skeletal_model_unindexed_swskinning_float32(iqm_model);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
                 build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
@@ -912,9 +1002,9 @@ int main(int argc, char *argv[]) {
                 draw_skeletal_model_indexed_swskinning_float32(iqm_model);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO)   {
-                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-                // apply_skeleton_pose_int16( iqm_skeleton, iqm_model); // TODO - Need unindexed 16-bit version of this function
-                // draw_skeletal_model_unindexed_swskinning_int16();
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                apply_skeleton_pose_unindexed_int16( iqm_skeleton, iqm_model);
+                draw_skeletal_model_unindexed_swskinning_int16(iqm_model);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_SWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES)  {
                 build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
@@ -934,48 +1024,48 @@ int main(int argc, char *argv[]) {
                 draw_skeletal_model_indexed_static_int16(iqm_model);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32)   {
-                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-                // draw_skeletal_model_unindexed_hwskinning_float32_float32weights();
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_unindexed_hwskinning_float32_float32weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32)  {
                 build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
                 draw_skeletal_model_indexed_hwskinning_float32_float32weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16)   {
-                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-                // draw_skeletal_model_unindexed_hwskinning_float32_int16weights();
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_unindexed_hwskinning_float32_int16weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16)  {
                 build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
                 draw_skeletal_model_indexed_hwskinning_float32_int16weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8)   {
-                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-                // draw_skeletal_model_unindexed_hwskinning_float32_int8weights();
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_unindexed_hwskinning_float32_int8weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_FLOAT32  &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8)  {
                 build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
                 draw_skeletal_model_indexed_hwskinning_float32_int8weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32)   {
-                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-                // draw_skeletal_model_unindexed_hwskinning_int16_float32weights();
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_unindexed_hwskinning_int16_float32weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_FLOAT32)  {
                 build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
                 draw_skeletal_model_indexed_hwskinning_int16_float32weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16)   {
-                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-                // draw_skeletal_model_unindexed_hwskinning_int16_int16weights();
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_unindexed_hwskinning_int16_int16weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT16)  {
                 build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
                 draw_skeletal_model_indexed_hwskinning_int16_int16weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_NO    &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8)   {
-                // build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
-                // draw_skeletal_model_unindexed_hwskinning_int16_int8weights();
+                build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);
+                draw_skeletal_model_unindexed_hwskinning_int16_int8weights(iqm_model, iqm_skeleton);
             }
             else if(draw_mode_animation == DRAW_MODE_ANIMATION_HWSKINNING  &&  draw_mode_vertex_size == DRAW_MODE_VERTEX_SIZE_INT16    &&  draw_mode_indexed == DRAW_MODE_INDEXED_YES   &&  draw_mode_hwskinning_weight_size == DRAW_MODE_HWSKINNING_WEIGHT_SIZE_INT8)  {
                 build_skeleton( iqm_skeleton, iqm_anim, framegroup_idx, frametime);

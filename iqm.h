@@ -678,9 +678,9 @@ typedef struct skeletal_mesh_s {
     vertex_t *unindexed_verts = nullptr; // Vertex struct passed to GU for drawing
     alt_vertex16_t *unindexed_vert16s = nullptr; // Vertex struct with 16-bit data
     skinning_vertex_t *unindexed_skinning_vert32s_w32 = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
-    skinning_vertex_t *unindexed_skinning_vert32s_w16 = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
-    skinning_vertex_t *unindexed_skinning_vert32s_w8 = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
-    alt_skinning_vertex16_w16_t *unindexed_skinning_vert16s_w32 = nullptr; // Vertex struct with 16-bit data and bone weights
+    alt_skinning_vertex32_w16_t *unindexed_skinning_vert32s_w16 = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
+    alt_skinning_vertex32_w8_t *unindexed_skinning_vert32s_w8 = nullptr; // Vertex struct with 8 skinning weights passed to GU for drawing
+    alt_skinning_vertex16_w32_t *unindexed_skinning_vert16s_w32 = nullptr; // Vertex struct with 16-bit data and bone weights
     alt_skinning_vertex16_w16_t *unindexed_skinning_vert16s_w16 = nullptr; // Vertex struct with 16-bit data and bone weights
     alt_skinning_vertex16_w8_t *unindexed_skinning_vert16s_w8 = nullptr; // Vertex struct with 16-bit data, but 8-bit bone weights
     // ------------------------------------------------------------------------
@@ -1596,9 +1596,9 @@ void write_mesh_alt_vert_structs(skeletal_mesh_t *mesh) {
         submesh->n_unindexed_verts = submesh->n_tris * 3;
 
         submesh->unindexed_skinning_vert32s_w32 = (skinning_vertex_t*) malloc(sizeof(skinning_vertex_t) * submesh->n_unindexed_verts);
-        submesh->unindexed_skinning_vert32s_w16 = (skinning_vertex_t*) malloc(sizeof(skinning_vertex_t) * submesh->n_unindexed_verts);
-        submesh->unindexed_skinning_vert32s_w8 = (skinning_vertex_t*) malloc(sizeof(skinning_vertex_t) * submesh->n_unindexed_verts);
-        submesh->unindexed_skinning_vert16s_w32 = (alt_skinning_vertex16_w16_t*) malloc(sizeof(alt_skinning_vertex16_w16_t) * submesh->n_unindexed_verts);
+        submesh->unindexed_skinning_vert32s_w16 = (alt_skinning_vertex32_w16_t*) malloc(sizeof(alt_skinning_vertex32_w16_t) * submesh->n_unindexed_verts);
+        submesh->unindexed_skinning_vert32s_w8 = (alt_skinning_vertex32_w8_t*) malloc(sizeof(alt_skinning_vertex32_w8_t) * submesh->n_unindexed_verts);
+        submesh->unindexed_skinning_vert16s_w32 = (alt_skinning_vertex16_w32_t*) malloc(sizeof(alt_skinning_vertex16_w32_t) * submesh->n_unindexed_verts);
         submesh->unindexed_skinning_vert16s_w16 = (alt_skinning_vertex16_w16_t*) malloc(sizeof(alt_skinning_vertex16_w16_t) * submesh->n_unindexed_verts);
         submesh->unindexed_skinning_vert16s_w8 = (alt_skinning_vertex16_w8_t*) malloc(sizeof(alt_skinning_vertex16_w8_t) * submesh->n_unindexed_verts);
 
@@ -1914,6 +1914,66 @@ void apply_skeleton_pose(skeletal_skeleton_t *skeleton, skeletal_model_t *model)
 
 
 }
+// 
+// unindexed float32 vertex struct copy of `apply_skeleton_pose`
+// Applies a `skeletal_skeleton_t` object's current built pose to the model. 
+// Populates the mesh's `verts` array with the final model-space vertex locations.
+// 
+void apply_skeleton_pose_unindexed_float32(skeletal_skeleton_t *skeleton, skeletal_model_t *model) {
+
+    if(skeleton->model != model) {
+        // FIXME - Is this a valid condition?
+        return;
+    }
+
+
+    // Apply skeleton pose to all vertices for all meshes
+    for(uint32_t mesh_idx = 0; mesh_idx < model->n_meshes; mesh_idx++) {
+        skeletal_mesh_t *mesh = &(model->meshes[mesh_idx]);
+
+        for(uint32_t tri_idx = 0; tri_idx < mesh->n_tris; tri_idx++) {
+
+            // FIXME - Technically this calculates the skinning multiple times for each vertex...
+            // FIXME   would it be better to, for every vertex, scan through the array and prepopulate 
+            // FIXME   the skinned poition / normal? Is searching through this array faster than doing the matrix math?
+            // FIXME   I find this highly unlikely.... but there is technically room to squeeze out more performance from this.
+            for(int tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++) {
+                int vert_idx = mesh->tri_verts[tri_idx * TRI_VERTS + tri_vert_idx];
+                // TODO - Copy the vertex data...
+                vec3_t vert_rest_pos = mesh->vert_rest_positions[vert_idx];
+                vec3_t vert_rest_nor = mesh->vert_rest_normals[vert_idx];
+
+                // Accumulate final vertex position here to calculate weighted sum
+                vec3_t vert_pos = { 0.0f, 0.0f, 0.0f};
+                vec3_t vert_nor = { 0.0f, 0.0f, 0.0f};
+                // Accumulate weighted sum total here
+                float total_weight = 0.0f;
+
+                // Loop through the vert's 4 bone indices
+                for(int i = 0; i < 4; i++) {
+                    int vert_bone_idx = mesh->vert_bone_idxs[(4*vert_idx) + i];
+                    float vert_bone_weight = mesh->vert_bone_weights[(4*vert_idx) + i];
+                    if(vert_bone_idx >= 0 && vert_bone_weight > 0.01) {
+                        // float vert_bone_weight = model->vert_bone_weights[4*i + j];
+                        vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
+                        vec3_t vert_bone_nor = mul_mat3x3_vec3(skeleton->bone_normal_transforms[vert_bone_idx], vert_rest_nor);
+                        vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+                        vert_nor = add_vec3( vert_nor, mul_float_vec3( vert_bone_weight, vert_bone_nor));
+                        total_weight += vert_bone_weight;
+                    }
+                }
+
+                mesh->unindexed_verts[tri_idx * TRI_VERTS + tri_vert_idx].x = vert_pos.x / total_weight;
+                mesh->unindexed_verts[tri_idx * TRI_VERTS + tri_vert_idx].y = vert_pos.y / total_weight;
+                mesh->unindexed_verts[tri_idx * TRI_VERTS + tri_vert_idx].z = vert_pos.z / total_weight;
+                mesh->unindexed_verts[tri_idx * TRI_VERTS + tri_vert_idx].nor_x = vert_nor.x / total_weight;
+                mesh->unindexed_verts[tri_idx * TRI_VERTS + tri_vert_idx].nor_y = vert_nor.y / total_weight;
+                mesh->unindexed_verts[tri_idx * TRI_VERTS + tri_vert_idx].nor_z = vert_nor.z / total_weight;
+                // TODO - Write vertex tangents?
+            }
+        }
+    }
+}
 
 
 // 
@@ -1964,6 +2024,68 @@ void apply_skeleton_pose_int16(skeletal_skeleton_t *skeleton, skeletal_model_t *
             model->meshes[mesh_idx].vert16s[vert_idx].nor_x = float_to_int16(vert_nor.x * nor_scale);
             model->meshes[mesh_idx].vert16s[vert_idx].nor_y = float_to_int16(vert_nor.y * nor_scale);
             model->meshes[mesh_idx].vert16s[vert_idx].nor_z = float_to_int16(vert_nor.z * nor_scale);
+        }
+    }
+}
+
+// 
+// unindexed int16 vertex struct copy of `apply_skeleton_pose`
+// Applies a `skeletal_skeleton_t` object's current built pose to the model. 
+// Populates the mesh's `verts` array with the final model-space vertex locations.
+// 
+void apply_skeleton_pose_unindexed_int16(skeletal_skeleton_t *skeleton, skeletal_model_t *model) {
+
+    if(skeleton->model != model) {
+        // FIXME - Is this a valid condition?
+        return;
+    }
+
+
+    // Apply skeleton pose to all vertices for all meshes
+    for(uint32_t mesh_idx = 0; mesh_idx < model->n_meshes; mesh_idx++) {
+        skeletal_mesh_t *mesh = &(model->meshes[mesh_idx]);
+
+        for(uint32_t tri_idx = 0; tri_idx < mesh->n_tris; tri_idx++) {
+
+            // FIXME - Technically this calculates the skinning multiple times for each vertex...
+            // FIXME   would it be better to, for every vertex, scan through the array and prepopulate 
+            // FIXME   the skinned poition / normal? Is searching through this array faster than doing the matrix math?
+            // FIXME   I find this highly unlikely.... but there is technically room to squeeze out more performance from this.
+            for(int tri_vert_idx = 0; tri_vert_idx < TRI_VERTS; tri_vert_idx++) {
+                int vert_idx = mesh->tri_verts[tri_idx * TRI_VERTS + tri_vert_idx];
+                // TODO - Copy the vertex data...
+                vec3_t vert_rest_pos = mesh->vert_rest_positions[vert_idx];
+                vec3_t vert_rest_nor = mesh->vert_rest_normals[vert_idx];
+
+                // Accumulate final vertex position here to calculate weighted sum
+                vec3_t vert_pos = { 0.0f, 0.0f, 0.0f};
+                vec3_t vert_nor = { 0.0f, 0.0f, 0.0f};
+                // Accumulate weighted sum total here
+                float total_weight = 0.0f;
+
+                // Loop through the vert's 4 bone indices
+                for(int i = 0; i < 4; i++) {
+                    int vert_bone_idx = mesh->vert_bone_idxs[(4*vert_idx) + i];
+                    float vert_bone_weight = mesh->vert_bone_weights[(4*vert_idx) + i];
+                    if(vert_bone_idx >= 0 && vert_bone_weight > 0.01) {
+                        // float vert_bone_weight = model->vert_bone_weights[4*i + j];
+                        vec3_t vert_bone_pos = mul_mat3x4_vec3(skeleton->bone_transforms[vert_bone_idx], vert_rest_pos);
+                        vec3_t vert_bone_nor = mul_mat3x3_vec3(skeleton->bone_normal_transforms[vert_bone_idx], vert_rest_nor);
+                        vert_pos = add_vec3( vert_pos, mul_float_vec3( vert_bone_weight, vert_bone_pos));
+                        vert_nor = add_vec3( vert_nor, mul_float_vec3( vert_bone_weight, vert_bone_nor));
+                        total_weight += vert_bone_weight;
+                    }
+                }
+
+                float pos_scale = model->meshes[mesh_idx].verts_unit_scale / total_weight;
+                float nor_scale = 1.0f / total_weight;
+                mesh->unindexed_vert16s[tri_idx * TRI_VERTS + tri_vert_idx].x = float_to_int16(vert_pos.x * pos_scale);
+                mesh->unindexed_vert16s[tri_idx * TRI_VERTS + tri_vert_idx].y = float_to_int16(vert_pos.y * pos_scale);
+                mesh->unindexed_vert16s[tri_idx * TRI_VERTS + tri_vert_idx].z = float_to_int16(vert_pos.z * pos_scale);
+                mesh->unindexed_vert16s[tri_idx * TRI_VERTS + tri_vert_idx].nor_x = float_to_int16(vert_nor.x * nor_scale);
+                mesh->unindexed_vert16s[tri_idx * TRI_VERTS + tri_vert_idx].nor_y = float_to_int16(vert_nor.y * nor_scale);
+                mesh->unindexed_vert16s[tri_idx * TRI_VERTS + tri_vert_idx].nor_z = float_to_int16(vert_nor.z * nor_scale);
+            }
         }
     }
 }
@@ -2515,6 +2637,8 @@ skeletal_model_t *load_iqm_file(const char*file_path) {
             skel_model->framegroup_n_frames[i] = iqm_framegroups[i].n_frames;
             skel_model->framegroup_fps[i] = iqm_framegroups[i].framerate;
             skel_model->framegroup_loop[i] = iqm_framegroups[i].flags & (uint32_t) iqm_anim_flag::IQM_ANIM_FLAG_LOOP;
+            // FOR DEBUG ONLY: Force-loop all animations:
+            skel_model->framegroup_loop[i] = true;
         }
     }
     log_printf("\tParsed %d framegroups.\n", skel_model->n_framegroups);
