@@ -1231,6 +1231,8 @@ int main(int argc, char *argv[]) {
     for(int i = 0; i < FPS_FRAMES_WINDOW; i++) {
         fps_frametimes[i] = start_epoch_time;
     }
+    double peak_fps = 0.0;
+    int peak_fps_delay = 60; // Delay measurement of peak fps by 60 frames
 
 
     const int DRAW_MODE_ANIMATION_SWBLENDING = 0;
@@ -1696,6 +1698,12 @@ int main(int argc, char *argv[]) {
         fps_frametimes[cur_frametime_idx] = cur_epoch_time;
         double elapsed_time = fps_frametimes[cur_frametime_idx] - fps_frametimes[oldest_frametime_idx];
         double cur_fps =  (FPS_FRAMES_WINDOW - 1) / elapsed_time;
+        if(peak_fps_delay > 0) {
+            peak_fps_delay -= 1;
+        }
+        else {
+            peak_fps = std::max(peak_fps, cur_fps);
+        }
         // pspDebugScreenPrintf("FPS: %.2f", cur_fps);
         
         // --- Overall average FPS ---
@@ -1704,7 +1712,7 @@ int main(int argc, char *argv[]) {
         // double cur_fps = (frame) / (cur_epoch_time - start_epoch_time);
         // pspDebugScreenPrintf("FPS: %.2f", cur_fps);
 
-        pspDebugScreenPrintf("FPS: %.2f (last %d frames), %.2f (overall)", cur_fps, FPS_FRAMES_WINDOW, overall_fps);
+        pspDebugScreenPrintf("FPS: %.2f (last %d frames), %.2f (overall), %.2f (peak)", cur_fps, FPS_FRAMES_WINDOW, overall_fps, peak_fps);
 
         
 
@@ -1781,6 +1789,8 @@ int main(int argc, char *argv[]) {
             for(int i = 0; i < FPS_FRAMES_WINDOW; i++) {
                 double cur_epoch_time = get_epoch_time();
                 fps_frametimes[i] = cur_epoch_time;
+                peak_fps = 0.0;
+                peak_fps_delay = 60; // Delay measurement of peak_fps by 60 frames
             }
         }
 
